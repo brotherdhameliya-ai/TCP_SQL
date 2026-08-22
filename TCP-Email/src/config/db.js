@@ -1,14 +1,13 @@
 /**
  * SQLite database adapter using sql.js (pure JavaScript — no native compilation)
  *
- * sql.js runs SQLite compiled to WebAssembly. It is 100% JS, requires no Python,
- * no node-gyp, and no C++ compiler — works on any platform out of the box.
+ * MULTI-PROCESS READ STRATEGY:
+ * - Writes: use in-memory singleton, persist to disk immediately after each write
+ * - Reads:  reload from disk first so we always see writes from other processes
  *
- * Shares the same tcp_logs.db file as the main app (project root).
- *
- * Public API mirrors mysql2/promise so all existing callers work unchanged:
- *   db.execute(sql, params) → Promise<[rows | ResultSetHeader, undefined]>
- *   db.query(sql, params)   → same
+ * This means:
+ *   app.js writes tcp_messages → persists to disk
+ *   TCP-Email reads tcp_messages → reloads from disk → sees new rows ✓
  */
 
 require("dotenv").config({ path: require("path").resolve(__dirname, "../../../.env"), override: true });
@@ -18,88 +17,76 @@ const fs   = require("fs");
 
 const DB_PATH = path.resolve(__dirname, "../../../tcp_logs.db");
 
-// ── Lazy singleton ─────────────────────────────────────
-let _dbPromise = null;
+let _SQL = null;
+let _db  = null;
 
-function getDb() {
-  if (!_dbPromise) {
-    _dbPromise = (async () => {
-      const initSqlJs = require("sql.js");
-      const SQL = await initSqlJs();
-
-      const fileBuffer = fs.existsSync(DB_PATH)
-        ? fs.readFileSync(DB_PATH)
-        : null;
-
-      const db = fileBuffer ? new SQL.Database(fileBuffer) : new SQL.Database();
-
-      db.run("PRAGMA journal_mode = WAL;");
-      db.run("PRAGMA foreign_keys = ON;");
-
-      return db;
-    })();
+async function getSQL() {
+  if (!_SQL) {
+    const initSqlJs = require("sql.js");
+    _SQL = await initSqlJs();
   }
-  return _dbPromise;
+  return _SQL;
 }
 
-// ── Persist to disk ────────────────────────────────────
-function persist(db) {
-  const data = db.export();
-  fs.writeFileSync(DB_PATH, Buffer.from(data));
+async function reloadDb() {
+  const SQL = await getSQL();
+  if (_db) { try { _db.close(); } catch (_) {} }
+  const buf = fs.existsSync(DB_PATH) ? fs.readFileSync(DB_PATH) : null;
+  _db = buf ? new SQL.Database(buf) : new SQL.Database();
+  _db.run("PRAGMA foreign_keys = ON;");
+  return _db;
 }
 
-// ── Helpers ────────────────────────────────────────────
+function persist() {
+  if (!_db) return;
+  fs.writeFileSync(DB_PATH, Buffer.from(_db.export()));
+}
+
 function isWriteStatement(sql) {
   return /^\s*(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|REPLACE)\s/i.test(sql);
 }
 
 function flattenParams(sql, params) {
   if (!params || params.length === 0) return { sql, params: [] };
-
   const flat = [];
   let i = 0;
   const newSql = sql.replace(/\?/g, () => {
     const p = params[i++];
-    if (Array.isArray(p)) {
-      p.forEach(v => flat.push(v));
-      return p.map(() => "?").join(",");
-    }
+    if (Array.isArray(p)) { p.forEach(v => flat.push(v)); return p.map(() => "?").join(","); }
     flat.push(p ?? null);
     return "?";
   });
-
   return { sql: newSql, params: flat };
 }
 
-// ── Core runner ────────────────────────────────────────
 async function run(sql, params = []) {
-  const db = await getDb();
   const { sql: finalSql, params: finalParams } = flattenParams(sql, params);
 
   if (isWriteStatement(finalSql)) {
-    db.run(finalSql, finalParams);
-    persist(db);
-    const insertId     = db.exec("SELECT last_insert_rowid() AS id")[0]?.values[0][0] ?? 0;
-    const affectedRows = db.getRowsModified();
+    if (!_db) await reloadDb();
+    _db.run(finalSql, finalParams);
+    persist();
+    const insertId     = _db.exec("SELECT last_insert_rowid() AS id")[0]?.values[0][0] ?? 0;
+    const affectedRows = _db.getRowsModified();
     return [{ insertId, affectedRows, changedRows: affectedRows }, undefined];
   } else {
+    // Always reload from disk — sees writes from app.js and other processes
+    const db = await reloadDb();
     const result = db.exec(finalSql, finalParams);
     if (!result.length) return [[], undefined];
-
     const { columns, values } = result[0];
     const rows = values.map(row => {
       const obj = {};
-      columns.forEach((col, i) => { obj[col] = row[i]; });
+      columns.forEach((col, idx) => { obj[col] = row[idx]; });
       return obj;
     });
     return [rows, undefined];
   }
 }
 
-// ── Public API ─────────────────────────────────────────
 module.exports = {
   execute: (sql, params) => run(sql, params),
   query:   (sql, params) => run(sql, params),
-  _getDb:   getDb,
-  _persist: () => getDb().then(db => persist(db)),
+  _getDb:   async () => { if (!_db) await reloadDb(); return _db; },
+  _persist: async () => persist(),
 };
