@@ -33,7 +33,7 @@ It has **4 parts** that work together:
 |-------------|-------------|
 | Requires MySQL Server installed | No server needed — file only |
 | `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` in `.env` | Single `DB_PATH=./tcp_logs.db` in `.env` |
-| `mysql2` npm package | `better-sqlite3` npm package |
+| `mysql2` npm package | `sql.js` npm package (pure JavaScript, no compilation) |
 | Database created with `CREATE DATABASE` | Database file created automatically on first run |
 | Data stored in MySQL data directory | Data stored in `tcp_logs.db` at project root |
 
@@ -427,13 +427,14 @@ project/
 ## SQLite Notes for Developers
 
 ### Shared database file
-All three Node.js services (Main API, TCP-Email, TCP-node-cleanup) open the same `tcp_logs.db` file. WAL (Write-Ahead Logging) mode is enabled so concurrent reads and writes work safely.
+All three Node.js services (Main API, TCP-Email, TCP-node-cleanup) open the same `tcp_logs.db` file. `sql.js` loads the database into memory, and after every write the file is flushed back to disk automatically.
 
-### mysql2 → better-sqlite3 compatibility shim
-The `db.js` in each service wraps `better-sqlite3`'s synchronous API to look like `mysql2/promise`, so all existing `await db.execute(sql, params)` calls work unchanged. The shim handles:
+### mysql2 → sql.js compatibility shim
+The `db.js` in each service wraps `sql.js`'s synchronous API in an async interface to look like `mysql2/promise`, so all existing `await db.execute(sql, params)` calls work unchanged. The shim handles:
 - Returning `[rows, undefined]` for SELECT queries
 - Returning `[{ insertId, affectedRows }, undefined]` for write queries
 - Expanding array parameters for `IN (?)` queries automatically
+- Persisting the in-memory database to `tcp_logs.db` after every write
 
 ### SQL syntax differences from MySQL
 

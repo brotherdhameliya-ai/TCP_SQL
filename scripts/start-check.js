@@ -1,5 +1,5 @@
 /**
- * Pre-start production validation (SQLite edition).
+ * Pre-start production validation (sql.js edition).
  * Verifies the .env file exists and the SQLite database has all required tables.
  */
 
@@ -12,21 +12,11 @@ require("dotenv").config({ path: path.join(rootDir, ".env") });
 const DB_PATH = path.resolve(rootDir, process.env.DB_PATH || "tcp_logs.db");
 
 const requiredTables = [
-  "camera_configs",
-  "tcp_logs",
-  "app_settings",
-  "companies",
-  "users",
-  "permissions",
-  "user_permissions",
-  "audit_logs",
-  "email_schedules",
-  "email_recipients",
-  "smtp_settings",
-  "email_logs",
-  "system_notifications",
-  "tcp_messages",
-  "user_tcp_configs",
+  "camera_configs", "tcp_logs", "app_settings",
+  "companies", "users", "permissions", "user_permissions",
+  "audit_logs", "email_schedules", "email_recipients",
+  "smtp_settings", "email_logs", "system_notifications",
+  "tcp_messages", "user_tcp_configs",
 ];
 
 async function run() {
@@ -51,23 +41,19 @@ async function run() {
   }
   console.log(`✓ SQLite database found: ${DB_PATH}`);
 
-  // 3. Open and verify tables
-  let Database;
-  try {
-    Database = require("better-sqlite3");
-  } catch (_) {
-    console.error("[ERROR] better-sqlite3 is not installed. Run: npm install");
-    process.exit(1);
-  }
+  // 3. Open and verify tables using sql.js (pure JS, no native build)
+  const initSqlJs = require("sql.js");
+  const SQL = await initSqlJs();
+  const fileBuffer = fs.readFileSync(DB_PATH);
+  const sqlite = new SQL.Database(fileBuffer);
 
-  const sqlite = new Database(DB_PATH, { readonly: true });
-  const existingTables = sqlite
-    .prepare("SELECT name FROM sqlite_master WHERE type='table'")
-    .all()
-    .map(r => r.name.toLowerCase());
+  const tableResult = sqlite.exec("SELECT name FROM sqlite_master WHERE type='table'");
+  const existingTables = tableResult.length
+    ? tableResult[0].values.map(r => r[0].toLowerCase())
+    : [];
+  sqlite.close();
 
   const missingTables = requiredTables.filter(t => !existingTables.includes(t.toLowerCase()));
-  sqlite.close();
 
   if (missingTables.length > 0) {
     console.error("[ERROR] Validation failed. The database is missing required tables:");

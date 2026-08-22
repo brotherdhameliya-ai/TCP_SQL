@@ -15,7 +15,6 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "better-sqlite3": "^13.0.3",
     "concurrently": "^10.0.3",
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
@@ -23,6 +22,7 @@
     "jsonwebtoken": "^9.0.2",
     "node-cron": "^4.2.1",
     "socket.io": "^4.7.5",
+    "sql.js": "^1.14.2",
     "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0"
   },

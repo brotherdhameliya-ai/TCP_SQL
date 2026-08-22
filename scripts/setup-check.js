@@ -9,6 +9,7 @@
 
 const path   = require("path");
 const fs     = require("fs");
+const fs     = require("fs");
 const http   = require("http");
 const net    = require("net");
 const { spawn } = require("child_process");
@@ -87,15 +88,16 @@ async function run() {
 
   // 2. Verify tables
   console.log("2. Verifying Required Database Tables...");
-  let Database;
-  try { Database = require("better-sqlite3"); }
-  catch (_) { console.error("   [ERROR] better-sqlite3 not installed."); process.exit(1); }
+  const initSqlJs = require("sql.js");
+  const SQL = await initSqlJs();
+  const fileBuffer = fs.readFileSync(DB_PATH);
+  const sqlite = new SQL.Database(fileBuffer);
 
-  const sqlite = new Database(DB_PATH, { readonly: true });
-  const existingTables = sqlite
-    .prepare("SELECT name FROM sqlite_master WHERE type='table'")
-    .all()
-    .map(r => r.name.toLowerCase());
+  const tableResult = sqlite.exec("SELECT name FROM sqlite_master WHERE type='table'");
+  const existingTables = tableResult.length
+    ? tableResult[0].values.map(r => r[0].toLowerCase())
+    : [];
+  sqlite.close();
 
   let missingCount = 0;
   requiredTables.forEach(t => {

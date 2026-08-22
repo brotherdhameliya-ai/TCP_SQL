@@ -16,9 +16,10 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "better-sqlite3": "^13.0.3",
+    "sql.js": "^1.14.2",
     "dotenv": "^17.4.2",
     "node-cron": "^4.2.1",
+    "sql.js": "^1.14.2",
     "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0"
   }

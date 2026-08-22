@@ -1,30 +1,29 @@
 /**
- * SQLite schema initialisation for the TCP-Email service.
+ * SQLite schema initialisation using sql.js (pure JavaScript, no native build).
  *
- * All MySQL-specific syntax has been replaced with SQLite equivalents:
- *   - AUTO_INCREMENT → INTEGER PRIMARY KEY (AUTOINCREMENT only where needed)
- *   - TINYINT(1)     → INTEGER
- *   - ENUM(...)      → TEXT CHECK(... IN (...))
- *   - SMALLINT UNSIGNED → INTEGER
- *   - ON UPDATE CURRENT_TIMESTAMP → handled by triggers where required
- *   - UNIQUE KEY name → plain UNIQUE constraint inside CREATE TABLE
- *   - INSERT IGNORE  → INSERT OR IGNORE
- *   - INFORMATION_SCHEMA queries → SQLite pragma / sqlite_master
+ * All tables are created with CREATE TABLE IF NOT EXISTS.
+ * Columns are added with ALTER TABLE only when missing.
+ * Seed data uses INSERT OR IGNORE so re-runs are safe.
  */
 
 const db = require("../config/db");
 const { hashPassword } = require("../utils/password");
 
 async function initSchema() {
-  const sqlite = db._sqlite; // synchronous better-sqlite3 instance
+  // Get the raw sql.js DB instance for bulk DDL
+  const sqlDb = await db._getDb();
 
-  // ── Helper: add a column if it doesn't already exist ─────────────────────
+  // ── Helper: add a column if it doesn't already exist ──────────────────────
+  function columnExists(tableName, columnName) {
+    const result = sqlDb.exec(`PRAGMA table_info(${tableName})`);
+    if (!result.length) return false;
+    return result[0].values.some(row => row[1] === columnName);
+  }
+
   function addColumnIfNotExists(tableName, columnName, columnDefinition) {
     try {
-      const cols = sqlite.pragma(`table_info(${tableName})`);
-      const exists = cols.some(c => c.name.toLowerCase() === columnName.toLowerCase());
-      if (!exists) {
-        sqlite.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`).run();
+      if (!columnExists(tableName, columnName)) {
+        sqlDb.run(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`);
         console.log(`Column '${columnName}' added to table '${tableName}'`);
       }
     } catch (err) {
@@ -32,17 +31,9 @@ async function initSchema() {
     }
   }
 
-  // ── Helper: check whether a table exists ─────────────────────────────────
-  function tableExists(name) {
-    const row = sqlite.prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
-    ).get(name);
-    return !!row;
-  }
+  // ── Create Tables ──────────────────────────────────────────────────────────
 
-  // ── Create Tables ─────────────────────────────────────────────────────────
-
-  sqlite.exec(`
+  sqlDb.run(`
     CREATE TABLE IF NOT EXISTS companies (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       name       TEXT    NOT NULL UNIQUE,
@@ -50,7 +41,7 @@ async function initSchema() {
     )
   `);
 
-  sqlite.exec(`
+  sqlDb.run(`
     CREATE TABLE IF NOT EXISTS users (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       company_id INTEGER NOT NULL,
@@ -65,7 +56,7 @@ async function initSchema() {
     )
   `);
 
-  sqlite.exec(`
+  sqlDb.run(`
     CREATE TABLE IF NOT EXISTS permissions (
       id   INTEGER PRIMARY KEY AUTOINCREMENT,
       code TEXT    NOT NULL UNIQUE,
@@ -73,7 +64,7 @@ async function initSchema() {
     )
   `);
 
-  sqlite.exec(`
+  sqlDb.run(`
     CREATE TABLE IF NOT EXISTS user_permissions (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id       INTEGER NOT NULL,
@@ -84,7 +75,7 @@ async function initSchema() {
     )
   `);
 
-  sqlite.exec(`
+  sqlDb.run(`
     CREATE TABLE IF NOT EXISTS audit_logs (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       company_id INTEGER NULL,
@@ -95,7 +86,7 @@ async function initSchema() {
     )
   `);
 
-  sqlite.exec(`
+  sqlDb.run(`
     CREATE TABLE IF NOT EXISTS email_schedules (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       time       TEXT    NOT NULL,
@@ -104,7 +95,7 @@ async function initSchema() {
     )
   `);
 
-  sqlite.exec(`
+  sqlDb.run(`
     CREATE TABLE IF NOT EXISTS email_recipients (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       email      TEXT    NOT NULL UNIQUE,
@@ -113,7 +104,7 @@ async function initSchema() {
     )
   `);
 
-  sqlite.exec(`
+  sqlDb.run(`
     CREATE TABLE IF NOT EXISTS smtp_settings (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       host       TEXT    NOT NULL,
@@ -125,7 +116,7 @@ async function initSchema() {
     )
   `);
 
-  sqlite.exec(`
+  sqlDb.run(`
     CREATE TABLE IF NOT EXISTS email_logs (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
       sent_at       TEXT    DEFAULT (datetime('now')),
@@ -140,7 +131,7 @@ async function initSchema() {
     )
   `);
 
-  sqlite.exec(`
+  sqlDb.run(`
     CREATE TABLE IF NOT EXISTS system_notifications (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
       service_name TEXT    NOT NULL,
@@ -153,7 +144,7 @@ async function initSchema() {
     )
   `);
 
-  sqlite.exec(`
+  sqlDb.run(`
     CREATE TABLE IF NOT EXISTS tcp_messages (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
       received_at   TEXT    DEFAULT (datetime('now')),
@@ -163,7 +154,7 @@ async function initSchema() {
     )
   `);
 
-  sqlite.exec(`
+  sqlDb.run(`
     CREATE TABLE IF NOT EXISTS user_tcp_configs (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id    INTEGER NOT NULL,
@@ -175,7 +166,7 @@ async function initSchema() {
     )
   `);
 
-  sqlite.exec(`
+  sqlDb.run(`
     CREATE TABLE IF NOT EXISTS camera_configs (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       camera_name TEXT    NOT NULL,
@@ -188,7 +179,7 @@ async function initSchema() {
     )
   `);
 
-  sqlite.exec(`
+  sqlDb.run(`
     CREATE TABLE IF NOT EXISTS tcp_logs (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       camera_id   INTEGER NULL,
@@ -200,14 +191,14 @@ async function initSchema() {
     )
   `);
 
-  sqlite.exec(`
+  sqlDb.run(`
     CREATE TABLE IF NOT EXISTS app_settings (
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
     )
   `);
 
-  // ── Safe column migrations ────────────────────────────────────────────────
+  // ── Safe column migrations ─────────────────────────────────────────────────
   addColumnIfNotExists("tcp_messages",         "company_id",  "INTEGER NOT NULL DEFAULT 1");
   addColumnIfNotExists("tcp_messages",         "port",        "INTEGER NULL");
   addColumnIfNotExists("tcp_messages",         "image",       "TEXT NULL");
@@ -220,17 +211,20 @@ async function initSchema() {
   addColumnIfNotExists("system_notifications", "company_id",  "INTEGER NOT NULL DEFAULT 1");
   addColumnIfNotExists("smtp_settings",        "company_id",  "INTEGER NOT NULL DEFAULT 1");
 
-  // ── Seed default data ─────────────────────────────────────────────────────
+  // ── Persist schema changes to disk ────────────────────────────────────────
+  await db._persist();
+
+  // ── Seed default data ──────────────────────────────────────────────────────
 
   // Default company
   let defaultCompanyId;
-  const existingCompany = sqlite.prepare("SELECT id FROM companies LIMIT 1").get();
-  if (!existingCompany) {
-    const info = sqlite.prepare("INSERT INTO companies (name) VALUES (?)").run("Default Company");
-    defaultCompanyId = info.lastInsertRowid;
+  const [companies] = await db.query("SELECT id FROM companies LIMIT 1");
+  if (!companies.length) {
+    const [r] = await db.execute("INSERT INTO companies (name) VALUES (?)", ["Default Company"]);
+    defaultCompanyId = r.insertId;
     console.log(`Default company seeded with ID: ${defaultCompanyId}`);
   } else {
-    defaultCompanyId = existingCompany.id;
+    defaultCompanyId = companies[0].id;
   }
 
   // Permissions
@@ -249,26 +243,24 @@ async function initSchema() {
     { code: "MANAGE_TCP_CONFIG",  name: "Manage TCP Config" },
   ];
 
-  const insertPerm = sqlite.prepare("INSERT OR IGNORE INTO permissions (code, name) VALUES (?, ?)");
   for (const p of permList) {
-    insertPerm.run(p.code, p.name);
+    await db.execute("INSERT OR IGNORE INTO permissions (code, name) VALUES (?, ?)", [p.code, p.name]);
   }
 
   // Super Admin user
-  const existingUser = sqlite.prepare("SELECT id FROM users LIMIT 1").get();
-  if (!existingUser) {
+  const [users] = await db.query("SELECT id FROM users LIMIT 1");
+  if (!users.length) {
     const hashedPass = hashPassword("Password123");
-    const info = sqlite.prepare(
-      "INSERT INTO users (company_id, name, email, password, role, active) VALUES (?, ?, ?, ?, 'Super Admin', 1)"
-    ).run(defaultCompanyId, "Super Admin", "superadmin@tcp.com", hashedPass);
-
-    const superUserId = info.lastInsertRowid;
+    const [r] = await db.execute(
+      "INSERT INTO users (company_id, name, email, password, role, active) VALUES (?, ?, ?, ?, 'Super Admin', 1)",
+      [defaultCompanyId, "Super Admin", "superadmin@tcp.com", hashedPass]
+    );
+    const superUserId = r.insertId;
     console.log(`Default Super Admin seeded (superadmin@tcp.com / Password123) with ID: ${superUserId}`);
 
-    const allPerms = sqlite.prepare("SELECT id FROM permissions").all();
-    const insertUp = sqlite.prepare("INSERT OR IGNORE INTO user_permissions (user_id, permission_id) VALUES (?, ?)");
+    const [allPerms] = await db.query("SELECT id FROM permissions");
     for (const p of allPerms) {
-      insertUp.run(superUserId, p.id);
+      await db.execute("INSERT OR IGNORE INTO user_permissions (user_id, permission_id) VALUES (?, ?)", [superUserId, p.id]);
     }
     console.log("All permissions assigned to default Super Admin.");
   }
