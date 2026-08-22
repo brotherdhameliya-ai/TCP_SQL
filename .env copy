@@ -6,13 +6,9 @@ LOG_FOLDER=logs
 # Express / API server
 API_PORT=8001
 EMAIL_PORT=4001
-MAILLL="ABCCCCC"
-# Database
-DB_HOST=localhost
-DB_PORT=3306
-DB_USER=root
-DB_PASSWORD=
-DB_NAME=tcp_logs
+
+# Database (SQLite — file stored at project root)
+DB_PATH=./tcp_logs.db
 
 # Migration endpoint – change this to something secret before exposing publicly
 MIGRATE_API_KEY=tcp_migrate_secret
