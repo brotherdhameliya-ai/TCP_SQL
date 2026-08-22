@@ -75,9 +75,9 @@ TCP-node-cleanup/node_modules/
 *.pfx
 
 # Database
-*.sqlite
-*.sqlite3
-*.db
+# *.db files are NOT ignored so tcp_logs.db is tracked in git.
+# NOTE: Only push this on private/internal repositories.
+# tcp_logs.db contains seeded schema — live data should be kept out of git.
 
 # Package lock (optional)
 # package-lock.json
