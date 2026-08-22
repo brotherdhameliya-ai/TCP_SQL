@@ -1,0 +1,28 @@
+RECONNECT_DELAY=5000
+TCP_MATCHING_WINDOW=30
+INITIAL_MESSAGE=Hello TCP Server
+LOG_FOLDER=logs
+
+# Express / API server
+API_PORT=8001
+EMAIL_PORT=4001
+MAILLL="ABCCCCC"
+# Database
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=
+DB_NAME=tcp_logs
+
+# Migration endpoint – change this to something secret before exposing publicly
+MIGRATE_API_KEY=tcp_migrate_secret
+
+ENABLE_AUTO_CLEANUP=true
+DATA_RETENTION_DAYS=0
+CLEANUP_TIME=11:00
+
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=dharmik.parvinfotech@gmail.com
+SMTP_PASS=ibnrgoklawuqxygn
+SMTP_FROM=TCP Monitor <dharmik4701@gmail.com>
