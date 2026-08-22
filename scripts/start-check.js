@@ -1,11 +1,14 @@
 /**
- * Pre-start production validation.
- * Verifies the .env file exists and the SQLite database has all required tables.
+ * Pre-start production validation (SQLite / sql.js edition).
  *
- * Uses the app's own db adapter (sql.js) for table queries.
- * Does NOT call process.exit() — sets process.exitCode instead and returns,
- * so Node.js can clean up sql.js WASM handles naturally (avoids the
- * libuv UV_HANDLE_CLOSING assertion crash on Windows).
+ * Checks:
+ *   1. .env file exists
+ *   2. tcp_logs.db exists  →  if not, runs initSchema() to create it
+ *   3. All 15 required tables are present
+ *
+ * Does NOT call process.exit() — sets process.exitCode and returns so that
+ * Node.js can clean up sql.js WASM handles naturally and avoid the libuv
+ * UV_HANDLE_CLOSING assertion crash on Windows.
  */
 
 const path = require("path");
@@ -37,18 +40,25 @@ async function run() {
   }
   console.log("✓ Environment file (.env) found.");
 
-  // 2. Check database file exists
+  // 2. If database file doesn't exist, run migrations to create it automatically
   if (!fs.existsSync(DB_PATH)) {
-    console.error(`[ERROR] SQLite database not found at: ${DB_PATH}`);
-    console.error("Please run setup.bat first.");
-    process.exitCode = 1;
-    return;
+    console.log(`[INFO] SQLite database not found at: ${DB_PATH}`);
+    console.log("[INFO] Running schema migrations to create database...");
+    try {
+      const initSchema = require("../TCP-Email/src/models/schema");
+      await initSchema();
+      console.log("✓ Database created and migrated successfully.");
+    } catch (err) {
+      console.error("[ERROR] Failed to create database:", err.message);
+      console.error("Please run setup.bat first.");
+      process.exitCode = 1;
+      return;
+    }
+  } else {
+    console.log(`✓ SQLite database found: ${DB_PATH}`);
   }
-  console.log(`✓ SQLite database found: ${DB_PATH}`);
 
-  // 3. Query tables via the app's db adapter
-  // process.exitCode (not process.exit) is used throughout so Node exits
-  // naturally and sql.js WASM handles are released without crashing libuv.
+  // 3. Query tables via the db adapter (sql.js — pure JS, no MySQL needed)
   try {
     const db = require("../TCP-Email/src/config/db");
 
@@ -64,7 +74,7 @@ async function run() {
     if (missingTables.length > 0) {
       console.error("[ERROR] Validation failed. Missing required tables:");
       missingTables.forEach(t => console.error(`  - ${t}`));
-      console.error("\nPlease run setup.bat to install and migrate first.");
+      console.error("\nPlease run setup.bat to install dependencies and run migrations.");
       process.exitCode = 1;
       return;
     }
@@ -77,11 +87,12 @@ async function run() {
     // No process.exit() — let Node exit naturally once WASM handles are released
   } catch (err) {
     console.error("[ERROR] Database check failed:", err.message);
+    console.error("Please run setup.bat first.");
     process.exitCode = 1;
   }
 }
 
 run().catch(err => {
-  console.error("Unhandled error during startup check:", err);
+  console.error("[ERROR] Unexpected failure during pre-start validation:", err.message);
   process.exitCode = 1;
 });
