@@ -161,9 +161,21 @@ async function run() {
     return;
   }
 
-  // 2. Verify tables — read the SQLite file directly (no sql.js, avoids libuv crash)
+  // 2. Verify tables — use sql.js to reliably read sqlite_master (same adapter used by migrations)
   console.log("2. Verifying Required Database Tables...");
-  const existingTables = readTablesFromSqliteFile(DB_PATH) || [];
+  let existingTables = [];
+  try {
+    const db = require("../TCP-Email/src/config/db");
+    const [tableRows] = await db.query(
+      "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+    );
+    existingTables = tableRows.map(r => r.name.toLowerCase());
+  } catch (err) {
+    console.error("   [ERROR] Could not query database tables:", err.message);
+    process.exitCode = 1;
+    return;
+  }
+
   let missingCount = 0;
   requiredTables.forEach(t => {
     if (existingTables.includes(t.toLowerCase())) {

@@ -50,12 +50,12 @@ export const createCompany = (name) => api.post("/companies", { name }).then(r =
 
 // Dashboard
 export const getStats = () => api.get("/dashboard/stats").then(r => r.data.data);
-export const getEnhancedStats    = () => api.get("/dashboard/enhanced-stats").then(r => r.data.data);
-export const getChartMsgTrend    = () => api.get("/dashboard/charts/messages-trend").then(r => r.data.data);
+export const getEnhancedStats = () => api.get("/dashboard/enhanced-stats").then(r => r.data.data);
+export const getChartMsgTrend = () => api.get("/dashboard/charts/messages-trend").then(r => r.data.data);
 export const getChartEmailStatus = () => api.get("/dashboard/charts/email-status").then(r => r.data.data);
-export const getChartDailyRecs   = () => api.get("/dashboard/charts/daily-records").then(r => r.data.data);
-export const getChartEmailHist   = () => api.get("/dashboard/charts/email-history").then(r => r.data.data);
-export const getChartBusyHours   = () => api.get("/dashboard/charts/busy-hours").then(r => r.data.data);
+export const getChartDailyRecs = () => api.get("/dashboard/charts/daily-records").then(r => r.data.data);
+export const getChartEmailHist = () => api.get("/dashboard/charts/email-history").then(r => r.data.data);
+export const getChartBusyHours = () => api.get("/dashboard/charts/busy-hours").then(r => r.data.data);
 
 // Schedules
 export const getSchedules = () => api.get("/schedules").then(r => r.data.data);
@@ -78,8 +78,8 @@ export const getPending = (page = 1, search = "") =>
   api.get(`/messages/pending?page=${page}&search=${encodeURIComponent(search)}`).then(r => r.data);
 
 // Records
-export const getRecords        = (params) => api.get("/records", { params }).then(r => r.data);
-export const getRecentRecords  = () => api.get("/records/recent").then(r => r.data.data);
+export const getRecords = (params) => api.get("/records", { params }).then(r => r.data);
+export const getRecentRecords = () => api.get("/records/recent").then(r => r.data.data);
 export const sendSelectedRecords = (ids) => api.post("/records/send-selected", { ids });
 export const sendFilteredRecords = (filters) => api.post("/records/send-filtered", filters);
 
@@ -88,19 +88,24 @@ export const getActiveSchedules = () =>
   api.get("/schedules").then(r => r.data.data.filter(s => s.active));
 
 // SMTP Settings
-export const getSmtpSettings    = () => api.get("/settings/smtp").then(r => r.data);
+export const getSmtpSettings = () => api.get("/settings/smtp").then(r => r.data);
 export const updateSmtpSettings = (data) => api.put("/settings/smtp", data);
-export const testEmail          = (to) => api.post("/settings/test-email", { to });
+export const testEmail = (to) => api.post("/settings/test-email", { to });
 
 // TCP Config (camera_configs)
-export const getTcpCameras   = () => api.get("/cameras").then(r => r.data);
+export const getTcpCameras = () => api.get("/cameras").then(r => r.data);
 export const createTcpCamera = (data) => api.post("/cameras", data).then(r => r.data);
 export const updateTcpCamera = (id, data) => api.put(`/cameras/${id}`, data).then(r => r.data);
 export const deleteTcpCamera = (id) => api.delete(`/cameras/${id}`).then(r => r.data);
-export const getTcpStatuses  = () => api.get("/statuses").then(r => r.data);
+export const getTcpStatuses = () => api.get("/statuses").then(r => r.data);
 
 export const getTcpClientConfig    = () => api.get("/tcp-client-config").then(r => r.data);
 export const updateTcpClientConfig = (data) => api.put("/tcp-client-config", data).then(r => r.data);
+
+// Zone management
+export const getTcpZones   = ()     => api.get("/tcp-zones").then(r => r.data);
+export const createTcpZone = (data) => api.post("/tcp-zones", data).then(r => r.data);
+export const deleteTcpZone = (id)   => api.delete(`/tcp-zones/${id}`).then(r => r.data);
 
 // Notifications
 export const getNotifications    = (severity) => api.get("/notifications", { params: severity ? { severity } : {} }).then(r => r.data.data);

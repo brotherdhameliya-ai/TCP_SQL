@@ -9,7 +9,7 @@ function shouldFilter(isSuperAdmin, companyId) {
 // ── Unsent Records ─────────────────────────────────────
 async function getUnsentRecords(companyId) {
   const [rows] = await db.execute(
-    "SELECT id, received_at, message, port, image, folder_path, barcode FROM tcp_messages WHERE email_sent = 0 AND company_id = ? ORDER BY received_at ASC",
+    "SELECT id, received_at, message, port, image, folder_path, barcode, zone_id FROM tcp_messages WHERE email_sent = 0 AND company_id = ? ORDER BY received_at ASC, id ASC",
     [companyId]
   );
   return rows;
@@ -66,7 +66,7 @@ async function getPendingPaginated({ page = 1, limit = 20, search = "" }, compan
   const whereClause = `WHERE ${where.join(" AND ")}`;
 
   const [rows] = await db.execute(
-    `SELECT id, received_at, message, port, image, folder_path, barcode FROM tcp_messages ${whereClause} ORDER BY received_at DESC LIMIT ? OFFSET ?`,
+    `SELECT id, received_at, message, port, image, folder_path, barcode, zone_id FROM tcp_messages ${whereClause} ORDER BY received_at DESC, id DESC LIMIT ? OFFSET ?`,
     [...params, limit, offset]
   );
 
@@ -113,7 +113,7 @@ async function getRecords({ page = 1, limit = 20, emailStatus = "all", timeRange
   const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
   const [rows] = await db.query(
-    `SELECT id, received_at, message, port, image, folder_path, barcode, email_sent, email_sent_at FROM tcp_messages ${whereClause} ORDER BY received_at DESC LIMIT ? OFFSET ?`,
+    `SELECT id, received_at, message, port, image, folder_path, barcode, zone_id, email_sent, email_sent_at FROM tcp_messages ${whereClause} ORDER BY received_at DESC, id DESC LIMIT ? OFFSET ?`,
     [...params, limit, offset]
   );
   const [[{ count }]] = await db.query(
@@ -130,14 +130,14 @@ async function getRecentRecords(limit = 20, companyId, isSuperAdmin = false) {
 
   if (filter) {
     const [rows] = await db.execute(
-      "SELECT id, received_at, message, port, image, folder_path, barcode, email_sent FROM tcp_messages WHERE company_id = ? ORDER BY received_at DESC LIMIT ?",
+      "SELECT id, received_at, message, port, image, folder_path, barcode, zone_id, email_sent FROM tcp_messages WHERE company_id = ? ORDER BY received_at DESC, id DESC LIMIT ?",
       [companyId || 1, limit]
     );
     return rows;
   }
 
   const [rows] = await db.execute(
-    "SELECT id, received_at, message, port, image, folder_path, barcode, email_sent FROM tcp_messages ORDER BY received_at DESC LIMIT ?",
+    "SELECT id, received_at, message, port, image, folder_path, barcode, zone_id, email_sent FROM tcp_messages ORDER BY received_at DESC, id DESC LIMIT ?",
     [limit]
   );
   return rows;
@@ -151,14 +151,14 @@ async function getRecordsByIds(ids, companyId = null, isSuperAdmin = true) {
 
   if (filter && companyId) {
     const [rows] = await db.query(
-      `SELECT id, received_at, message, port, image, folder_path, barcode, email_sent, email_sent_at FROM tcp_messages WHERE id IN (${placeholders}) AND company_id = ? ORDER BY received_at DESC`,
+      `SELECT id, received_at, message, port, image, folder_path, barcode, zone_id, email_sent, email_sent_at FROM tcp_messages WHERE id IN (${placeholders}) AND company_id = ? ORDER BY received_at DESC, id DESC`,
       [...ids, companyId]
     );
     return rows;
   }
 
   const [rows] = await db.query(
-    `SELECT id, received_at, message, port, image, folder_path, barcode, email_sent, email_sent_at FROM tcp_messages WHERE id IN (${placeholders}) ORDER BY received_at DESC`,
+    `SELECT id, received_at, message, port, image, folder_path, barcode, zone_id, email_sent, email_sent_at FROM tcp_messages WHERE id IN (${placeholders}) ORDER BY received_at DESC, id DESC`,
     ids
   );
   return rows;
@@ -187,7 +187,7 @@ async function getRecordsByFilter({ emailStatus = "all", timeRange = "all", sear
 
   const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
   const [rows] = await db.query(
-    `SELECT id, received_at, message, port, image, folder_path, barcode, email_sent, email_sent_at FROM tcp_messages ${whereClause} ORDER BY received_at DESC`,
+    `SELECT id, received_at, message, port, image, folder_path, barcode, zone_id, email_sent, email_sent_at FROM tcp_messages ${whereClause} ORDER BY received_at DESC, id DESC`,
     params
   );
   return rows;

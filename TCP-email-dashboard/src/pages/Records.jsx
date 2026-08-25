@@ -94,10 +94,11 @@ export default function Records() {
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["records", page, search, emailStatus, timeRange],
     queryFn:  () => getRecords({ page, limit: 20, emailStatus, timeRange, search }),
-    keepPreviousData: true,
+    placeholderData: (previousData) => previousData,
+    refetchInterval: 10000, // 10s auto-refresh
   });
 
   const currentIds   = data?.records?.map((r) => r.id) ?? [];

@@ -1,6 +1,6 @@
-const router  = require("express").Router();
-const jwt     = require("jsonwebtoken");
-const ctrl    = require("../controllers/camera.controller");
+const router = require("express").Router();
+const jwt = require("jsonwebtoken");
+const ctrl = require("../controllers/camera.controller");
 const tcpClientCtrl = require("../controllers/tcpClientConfig.controller");
 
 const JWT_SECRET = process.env.JWT_SECRET || "tcp_secret_key_123_456_789";
@@ -19,16 +19,21 @@ function authenticate(req, res, next) {
 }
 
 // Camera / TCP server listener routes
-router.get("/cameras",     ctrl.getAll);
-router.post("/cameras",    ctrl.create);
+router.get("/cameras", ctrl.getAll);
+router.post("/cameras", ctrl.create);
 router.put("/cameras/:id", ctrl.update);
 router.delete("/cameras/:id", ctrl.remove);
-router.get("/logs",        ctrl.getLogs);
+router.get("/logs", ctrl.getLogs);
 
 // User-scoped TCP client config routes (auth required)
-router.get("/tcp-client-config", authenticate, tcpClientCtrl.getConfig);
-router.put("/tcp-client-config", authenticate, tcpClientCtrl.updateConfig);
-router.post("/tcp-client-config/disconnect", authenticate, tcpClientCtrl.disconnect);
+router.get("/tcp-client-config",            authenticate, tcpClientCtrl.getConfig);
+router.put("/tcp-client-config",            authenticate, tcpClientCtrl.updateConfig);
+router.post("/tcp-client-config/disconnect",authenticate, tcpClientCtrl.disconnect);
 router.post("/tcp-client-config/reconnect", authenticate, tcpClientCtrl.reconnect);
+
+// Zone routes
+router.get("/tcp-zones",      authenticate, tcpClientCtrl.getZones);
+router.post("/tcp-zones",     authenticate, tcpClientCtrl.createZone);
+router.delete("/tcp-zones/:id", authenticate, tcpClientCtrl.deleteZone);
 
 module.exports = router;

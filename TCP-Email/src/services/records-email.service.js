@@ -1,22 +1,23 @@
-const fs = require("fs");
+const fs   = require("fs");
 const path = require("path");
-const { createTransporter } = require("../config/mailer");
-const { getSmtpSettings, getActiveRecipients, createEmailLog } = require("../models/email.model");
-const { getRecordsByIds, getRecordsByFilter } = require("../models/message.model");
-const { generateExcelBuffer, createImagesZip } = require("./excel.service");
-const logger = require("../utils/logger");
+const { createTransporter }                                      = require("../config/mailer");
+const { getSmtpSettings, getActiveRecipients, createEmailLog }   = require("../models/email.model");
+const { getRecordsByIds, getRecordsByFilter }                    = require("../models/message.model");
+const { generateExcelBuffer, createImagesZip }                   = require("./excel.service");
+const logger                                                     = require("../utils/logger");
 
+/* ── HTML template for manual-send emails ─────────────────────────────────── */
 function buildReportHtml({ records, totalCount, action }) {
-  const preview  = records.slice(0, 20);
-  const hasMore  = totalCount > 20;
-  const now      = new Date().toLocaleString();
+  const preview = records.slice(0, 20);
+  const hasMore = totalCount > 20;
+  const now     = new Date().toLocaleString();
 
   const rows = preview.map((r, i) => `
     <tr style="background:${i % 2 === 0 ? "#f8fafc" : "#ffffff"}">
       <td style="padding:7px 10px;border:1px solid #e2e8f0;font-size:12px">${r.id}</td>
       <td style="padding:7px 10px;border:1px solid #e2e8f0;font-size:12px">${r.received_at ? new Date(r.received_at).toLocaleString() : ""}</td>
       <td style="padding:7px 10px;border:1px solid #e2e8f0;font-size:12px;max-width:360px;word-break:break-word">${r.message}</td>
-      <td style="padding:7px 10px;border:1px solid #e2e8f0;font-size:12px;max-width:280px;word-break:break-word">${r.barcode ? String(r.barcode).replace(/\|/g, ' | ') : '—'}</td>
+      <td style="padding:7px 10px;border:1px solid #e2e8f0;font-size:12px;max-width:280px;word-break:break-word">${r.barcode ? String(r.barcode).replace(/\|/g, " | ") : "—"}</td>
     </tr>`).join("");
 
   return `<!DOCTYPE html>
@@ -67,6 +68,7 @@ function buildReportHtml({ records, totalCount, action }) {
 </html>`;
 }
 
+/* ── Core send helper — groups records by zone, one email per zone ─────────── */
 async function sendRecordsEmail({ records, action, companyId }) {
   const smtp = await getSmtpSettings(companyId);
   if (!smtp) return { skipped: true, reason: "SMTP settings not configured" };
@@ -74,76 +76,104 @@ async function sendRecordsEmail({ records, action, companyId }) {
   const recipients = await getActiveRecipients(companyId);
   if (!recipients.length) return { skipped: true, reason: "No active recipients" };
 
-  const { buffer, fileName } = await generateExcelBuffer(records);
-  const html = buildReportHtml({ records, totalCount: records.length, action });
+  // ── Group by zone_id ────────────────────────────────────────────────────────
+  const groups = {};
+  for (const r of records) {
+    const key = r.zone_id != null ? String(r.zone_id) : "unassigned";
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(r);
+  }
 
-  const dateFrom = records.length ? new Date(records[records.length - 1].received_at).toISOString().split("T")[0] : null;
-  const dateTo   = records.length ? new Date(records[0].received_at).toISOString().split("T")[0] : null;
+  const results = [];
 
-  // Prepare attachments
-  const attachments = [{ filename: fileName, content: buffer, contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }];
+  for (const [zoneKey, zoneRecords] of Object.entries(groups)) {
+    const zoneLabel  = zoneKey === "unassigned" ? action : `${action} (Zone ${zoneKey})`;
+    const dateFrom   = zoneRecords.length ? new Date(zoneRecords[zoneRecords.length - 1].received_at).toISOString().split("T")[0] : null;
+    const dateTo     = zoneRecords.length ? new Date(zoneRecords[0].received_at).toISOString().split("T")[0] : null;
 
-  // Create zip file with images
-  try {
-    const zipBuffer = await createImagesZip(records);
-    if (zipBuffer.length > 0) {
-      attachments.push({
-        filename: `Records_Images_${dateFrom}.zip`,
-        content: zipBuffer,
-        contentType: "application/zip",
+    const html        = buildReportHtml({ records: zoneRecords, totalCount: zoneRecords.length, action: zoneLabel });
+    const attachments = [];
+
+    // Excel
+    try {
+      const { buffer, fileName } = await generateExcelBuffer(zoneRecords);
+      attachments.push({ filename: fileName, content: buffer, contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    } catch (excelErr) {
+      logger.error(`[${zoneLabel}] Excel failed: ${excelErr.message}`);
+    }
+
+    // Images ZIP (per-record folder_path is already correct from tcp_messages insert)
+    try {
+      const zipBuffer = await createImagesZip(zoneRecords);
+      if (zipBuffer.length > 0) {
+        attachments.push({
+          filename:    `Records_Images_${zoneKey}_${dateFrom}.zip`,
+          content:     zipBuffer,
+          contentType: "application/zip",
+        });
+        logger.info(`[${zoneLabel}] Created ZIP for ${zoneRecords.length} records`);
+      } else {
+        logger.warn(`[${zoneLabel}] No images found to ZIP`);
+      }
+    } catch (zipErr) {
+      logger.error(`[${zoneLabel}] ZIP failed: ${zipErr.message}`);
+    }
+
+    try {
+      const transporter = await createTransporter(companyId);
+      await transporter.sendMail({
+        from:        `${smtp.from_name} <${smtp.user}>`,
+        to:          recipients.join(", "),
+        subject:     `TCP Records — ${zoneRecords.length.toLocaleString()} records · ${zoneLabel}`,
+        html,
+        attachments,
       });
-      logger.info(`Created zip file with images for ${records.length} records`);
-    } else {
-      logger.warn(`No images found to zip for action: ${action}`);
+
+      try {
+        await createEmailLog({
+          record_count: zoneRecords.length,
+          status:       "success",
+          date_from:    dateFrom,
+          date_to:      dateTo,
+          action:       zoneLabel,
+          recipients:   recipients.join(", "),
+        }, companyId);
+      } catch (logErr) {
+        logger.error(`[${zoneLabel}] Log write failed (success): ${logErr.message}`);
+      }
+
+      logger.info(`[${zoneLabel}] Email sent: ${zoneRecords.length} records → ${recipients.join(", ")}`);
+      results.push({ success: true, count: zoneRecords.length, recipients, zone: zoneKey });
+    } catch (err) {
+      try {
+        await createEmailLog({
+          record_count:  zoneRecords.length,
+          status:        "failed",
+          error_message: err.message,
+          date_from:     dateFrom,
+          date_to:       dateTo,
+          action:        zoneLabel,
+          recipients:    recipients.join(", "),
+        }, companyId);
+      } catch (logErr) {
+        logger.error(`[${zoneLabel}] Log write failed (failed): ${logErr.message}`);
+      }
+      logger.error(`[${zoneLabel}] Email failed for Company ID ${companyId}: ${err.message}`);
+      results.push({ success: false, error: err.message, zone: zoneKey });
     }
-  } catch (zipErr) {
-    logger.error(`Failed to create images zip for action ${action}: ${zipErr.message}`);
   }
 
-  try {
-    const transporter = await createTransporter(companyId);
-    await transporter.sendMail({
-      from:        `${smtp.from_name} <${smtp.user}>`,
-      to:          recipients.join(", "),
-      subject:     `TCP Records — ${records.length.toLocaleString()} records · ${action}`,
-      html,
-      attachments,
-    });
+  const totalSent  = results.filter(r => r.success).reduce((acc, r) => acc + (r.count || 0), 0);
+  const firstError = results.find(r => !r.success)?.error;
 
-    try {
-      await createEmailLog({
-        record_count:  records.length,
-        status:        "success",
-        date_from:     dateFrom,
-        date_to:       dateTo,
-        action,
-        recipients:    recipients.join(", "),
-      }, companyId);
-    } catch (logErr) {
-      logger.error(`[${action}] Failed to create email log (success): ${logErr.message}`);
-    }
-
-    logger.info(`[${action}] Email sent: ${records.length} records → ${recipients.join(", ")} for Company ID ${companyId}`);
-    return { success: true, count: records.length, recipients };
-  } catch (err) {
-    try {
-      await createEmailLog({
-        record_count:  records.length,
-        status:        "failed",
-        error_message: err.message,
-        date_from:     dateFrom,
-        date_to:       dateTo,
-        action,
-        recipients:    recipients.join(", "),
-      }, companyId);
-    } catch (logErr) {
-      logger.error(`[${action}] Failed to create email log (failed): ${logErr.message}`);
-    }
-    logger.error(`[${action}] Email failed for Company ID ${companyId}: ${err.message}`);
-    return { success: false, error: err.message };
+  if (totalSent === 0 && firstError) {
+    return { success: false, error: firstError, results };
   }
+
+  return { success: true, count: totalSent, results };
 }
 
+/* ── Public API ────────────────────────────────────────────────────────────── */
 async function sendSelectedRecords(ids, companyId, isSuperAdmin) {
   const records = await getRecordsByIds(ids, companyId, isSuperAdmin);
   if (!records.length) return { skipped: true, reason: "No records found for given IDs" };

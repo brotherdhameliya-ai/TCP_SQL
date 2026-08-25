@@ -1,9 +1,10 @@
 /**
  * SQLite database adapter using sql.js — TCP-node-cleanup service.
  *
- * MULTI-PROCESS READ STRATEGY:
- * - Writes: in-memory singleton, persist to disk immediately
- * - Reads:  reload from disk first to see other processes' writes
+ * MULTI-PROCESS STRATEGY:
+ *   Every write reads the latest database buffer from disk, applies the mutation,
+ *   captures insertId/affectedRows, exports and writes the buffer back to disk immediately.
+ *   Every read reads the latest database buffer from disk.
  */
 
 require("dotenv").config({ path: require("path").resolve(__dirname, "../../../.env") });
@@ -14,25 +15,47 @@ const fs   = require("fs");
 const DB_PATH = path.resolve(__dirname, "../../../tcp_logs.db");
 
 let _SQL = null;
-let _db  = null;
-
 async function getSQL() {
-  if (!_SQL) { const initSqlJs = require("sql.js"); _SQL = await initSqlJs(); }
+  if (!_SQL) {
+    const initSqlJs = require("sql.js");
+    _SQL = await initSqlJs();
+  }
   return _SQL;
 }
 
-async function reloadDb() {
+async function readFromDisk(finalSql, finalParams) {
   const SQL = await getSQL();
-  if (_db) { try { _db.close(); } catch (_) {} }
   const buf = fs.existsSync(DB_PATH) ? fs.readFileSync(DB_PATH) : null;
-  _db = buf ? new SQL.Database(buf) : new SQL.Database();
-  _db.run("PRAGMA foreign_keys = ON;");
-  return _db;
+  const db  = buf ? new SQL.Database(buf) : new SQL.Database();
+  db.run("PRAGMA foreign_keys = ON;");
+  try {
+    const result = db.exec(finalSql, finalParams);
+    if (!result.length) return [];
+    const { columns, values } = result[0];
+    return values.map(row => {
+      const obj = {};
+      columns.forEach((col, i) => { obj[col] = row[i]; });
+      return obj;
+    });
+  } finally {
+    db.close();
+  }
 }
 
-function persist() {
-  if (!_db) return;
-  fs.writeFileSync(DB_PATH, Buffer.from(_db.export()));
+async function writeToDisk(finalSql, finalParams) {
+  const SQL = await getSQL();
+  const buf = fs.existsSync(DB_PATH) ? fs.readFileSync(DB_PATH) : null;
+  const db  = buf ? new SQL.Database(buf) : new SQL.Database();
+  db.run("PRAGMA foreign_keys = ON;");
+  try {
+    db.run(finalSql, finalParams);
+    const insertId     = db.exec("SELECT last_insert_rowid() AS id")[0]?.values[0][0] ?? 0;
+    const affectedRows = db.getRowsModified();
+    fs.writeFileSync(DB_PATH, Buffer.from(db.export()));
+    return [{ insertId, affectedRows, changedRows: affectedRows }, undefined];
+  } finally {
+    db.close();
+  }
 }
 
 function isWriteStatement(sql) {
@@ -54,24 +77,10 @@ function flattenParams(sql, params) {
 
 async function run(sql, params = []) {
   const { sql: finalSql, params: finalParams } = flattenParams(sql, params);
-
   if (isWriteStatement(finalSql)) {
-    if (!_db) await reloadDb();
-    _db.run(finalSql, finalParams);
-    persist();
-    const insertId     = _db.exec("SELECT last_insert_rowid() AS id")[0]?.values[0][0] ?? 0;
-    const affectedRows = _db.getRowsModified();
-    return [{ insertId, affectedRows, changedRows: affectedRows }, undefined];
+    return writeToDisk(finalSql, finalParams);
   } else {
-    const db = await reloadDb();
-    const result = db.exec(finalSql, finalParams);
-    if (!result.length) return [[], undefined];
-    const { columns, values } = result[0];
-    const rows = values.map(row => {
-      const obj = {};
-      columns.forEach((col, idx) => { obj[col] = row[idx]; });
-      return obj;
-    });
+    const rows = await readFromDisk(finalSql, finalParams);
     return [rows, undefined];
   }
 }

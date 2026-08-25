@@ -57,6 +57,12 @@ export default defineConfig({
         timeout: 10000,
         proxyTimeout: 10000,
       },
+      "/api/tcp-zones": {
+        target: `http://localhost:${apiPort}`,
+        changeOrigin: true,
+        timeout: 10000,
+        proxyTimeout: 10000,
+      },
       "/api/tcp-image": {
         target: `http://localhost:${apiPort}`,
         changeOrigin: true,
@@ -101,6 +107,12 @@ export default defineConfig({
         proxyTimeout: 10000,
       },
       "/api/tcp-client-config": {
+        target: `http://localhost:${apiPort}`,
+        changeOrigin: true,
+        timeout: 10000,
+        proxyTimeout: 10000,
+      },
+      "/api/tcp-zones": {
         target: `http://localhost:${apiPort}`,
         changeOrigin: true,
         timeout: 10000,

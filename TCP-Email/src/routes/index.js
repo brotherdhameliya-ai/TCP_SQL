@@ -77,4 +77,27 @@ router.get("/notifications/unread-count", authorize("VIEW_NOTIFICATIONS"), notif
 router.put("/notifications/read-all",     authorize("VIEW_NOTIFICATIONS"), notif.markAllRead);
 router.put("/notifications/:id/read",     authorize("VIEW_NOTIFICATIONS"), notif.markRead);
 
+// ── TCP Client Config & Zones (Dual Mount for Proxy Resiliency) ──
+const tcpClientCtrl = require("../../../Src/controllers/tcpClientConfig.controller");
+router.get("/tcp-client-config",            tcpClientCtrl.getConfig);
+router.put("/tcp-client-config",            tcpClientCtrl.updateConfig);
+router.post("/tcp-client-config/disconnect",tcpClientCtrl.disconnect);
+router.post("/tcp-client-config/reconnect", tcpClientCtrl.reconnect);
+
+router.get("/tcp-zones",      tcpClientCtrl.getZones);
+router.post("/tcp-zones",     tcpClientCtrl.createZone);
+router.delete("/tcp-zones/:id", tcpClientCtrl.deleteZone);
+
+// Serve matched TCP images (OK or NR folders)
+router.get("/tcp-image", (req, res) => {
+  const { file, folder } = req.query;
+  if (!file || !folder) return res.status(400).end();
+  const pathMod = require("path");
+  const resolved = pathMod.resolve(folder, file);
+  if (!resolved.startsWith(pathMod.resolve(folder))) return res.status(403).end();
+  res.sendFile(resolved, (err) => { if (err) res.status(404).end(); });
+});
+
 module.exports = router;
+
+

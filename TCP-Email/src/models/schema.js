@@ -156,13 +156,33 @@ async function initSchema() {
 
   sqlDb.run(`
     CREATE TABLE IF NOT EXISTS user_tcp_configs (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id        INTEGER NOT NULL,
+      host           TEXT    NOT NULL,
+      port           INTEGER NOT NULL,
+      is_active      INTEGER NOT NULL DEFAULT 1,
+      created_at     TEXT    DEFAULT (datetime('now')),
+      UNIQUE(user_id, host, port)
+    )
+  `);
+
+  sqlDb.run(`
+    CREATE TABLE IF NOT EXISTS tcp_zones (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id    INTEGER NOT NULL,
-      host       TEXT    NOT NULL,
-      port       INTEGER NOT NULL,
-      is_active  INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT    DEFAULT (datetime('now')),
-      UNIQUE(user_id, host, port)
+      name       TEXT    NOT NULL,
+      created_at TEXT    DEFAULT (datetime('now'))
+    )
+  `);
+
+  sqlDb.run(`
+    CREATE TABLE IF NOT EXISTS tcp_zone_ports (
+      id      INTEGER PRIMARY KEY AUTOINCREMENT,
+      zone_id INTEGER NOT NULL,
+      host    TEXT    NOT NULL,
+      port    INTEGER NOT NULL,
+      UNIQUE(zone_id, host, port),
+      FOREIGN KEY(zone_id) REFERENCES tcp_zones(id) ON DELETE CASCADE
     )
   `);
 
@@ -199,17 +219,22 @@ async function initSchema() {
   `);
 
   // ── Safe column migrations ─────────────────────────────────────────────────
-  addColumnIfNotExists("tcp_messages",         "company_id",  "INTEGER NOT NULL DEFAULT 1");
-  addColumnIfNotExists("tcp_messages",         "port",        "INTEGER NULL");
-  addColumnIfNotExists("tcp_messages",         "image",       "TEXT NULL");
-  addColumnIfNotExists("tcp_messages",         "folder_path", "TEXT NULL");
-  addColumnIfNotExists("tcp_messages",         "barcode",     "TEXT NULL");
-  addColumnIfNotExists("user_tcp_configs",     "folder_path", "TEXT NULL");
-  addColumnIfNotExists("email_logs",           "company_id",  "INTEGER NOT NULL DEFAULT 1");
-  addColumnIfNotExists("email_schedules",      "company_id",  "INTEGER NOT NULL DEFAULT 1");
-  addColumnIfNotExists("email_recipients",     "company_id",  "INTEGER NOT NULL DEFAULT 1");
-  addColumnIfNotExists("system_notifications", "company_id",  "INTEGER NOT NULL DEFAULT 1");
-  addColumnIfNotExists("smtp_settings",        "company_id",  "INTEGER NOT NULL DEFAULT 1");
+  addColumnIfNotExists("tcp_messages", "company_id", "INTEGER NOT NULL DEFAULT 1");
+  addColumnIfNotExists("tcp_messages", "port", "INTEGER NULL");
+  addColumnIfNotExists("tcp_messages", "image", "TEXT NULL");
+  addColumnIfNotExists("tcp_messages", "folder_path", "TEXT NULL");
+  addColumnIfNotExists("tcp_messages", "barcode", "TEXT NULL");
+  addColumnIfNotExists("user_tcp_configs", "folder_path",    "TEXT NULL");
+  addColumnIfNotExists("user_tcp_configs", "pair_id",        "INTEGER NOT NULL DEFAULT 0");
+  addColumnIfNotExists("user_tcp_configs", "folder_path_ok", "TEXT NULL");
+  addColumnIfNotExists("user_tcp_configs", "folder_path_nr", "TEXT NULL");
+  addColumnIfNotExists("user_tcp_configs", "zone_id",        "INTEGER NULL");
+  addColumnIfNotExists("tcp_messages",     "zone_id",        "INTEGER NULL");
+  addColumnIfNotExists("email_logs", "company_id", "INTEGER NOT NULL DEFAULT 1");
+  addColumnIfNotExists("email_schedules", "company_id", "INTEGER NOT NULL DEFAULT 1");
+  addColumnIfNotExists("email_recipients", "company_id", "INTEGER NOT NULL DEFAULT 1");
+  addColumnIfNotExists("system_notifications", "company_id", "INTEGER NOT NULL DEFAULT 1");
+  addColumnIfNotExists("smtp_settings", "company_id", "INTEGER NOT NULL DEFAULT 1");
 
   // ── Persist schema changes to disk ────────────────────────────────────────
   await db._persist();
@@ -220,8 +245,9 @@ async function initSchema() {
   let defaultCompanyId;
   const [companies] = await db.query("SELECT id FROM companies LIMIT 1");
   if (!companies.length) {
-    const [r] = await db.execute("INSERT INTO companies (name) VALUES (?)", ["Default Company"]);
-    defaultCompanyId = r.insertId;
+    await db.execute("INSERT INTO companies (name) VALUES (?)", ["Default Company"]);
+    const [[newComp]] = await db.query("SELECT id FROM companies WHERE name = ? LIMIT 1", ["Default Company"]);
+    defaultCompanyId = newComp?.id || 1;
     console.log(`Default company seeded with ID: ${defaultCompanyId}`);
   } else {
     defaultCompanyId = companies[0].id;
@@ -229,18 +255,18 @@ async function initSchema() {
 
   // Permissions
   const permList = [
-    { code: "VIEW_DASHBOARD",     name: "View Dashboard" },
-    { code: "VIEW_RECORDS",       name: "View Records" },
-    { code: "SEND_EMAIL",         name: "Send Email" },
-    { code: "VIEW_EMAIL_LOGS",    name: "View Email Logs" },
-    { code: "MANAGE_RECIPIENTS",  name: "Manage Recipients" },
-    { code: "MANAGE_SCHEDULES",   name: "Manage Schedules" },
+    { code: "VIEW_DASHBOARD", name: "View Dashboard" },
+    { code: "VIEW_RECORDS", name: "View Records" },
+    { code: "SEND_EMAIL", name: "Send Email" },
+    { code: "VIEW_EMAIL_LOGS", name: "View Email Logs" },
+    { code: "MANAGE_RECIPIENTS", name: "Manage Recipients" },
+    { code: "MANAGE_SCHEDULES", name: "Manage Schedules" },
     { code: "VIEW_NOTIFICATIONS", name: "View Notifications" },
-    { code: "MANAGE_SETTINGS",    name: "Manage Settings" },
-    { code: "CREATE_USERS",       name: "Create Users" },
-    { code: "EDIT_USERS",         name: "Edit Users" },
-    { code: "DELETE_USERS",       name: "Delete Users" },
-    { code: "MANAGE_TCP_CONFIG",  name: "Manage TCP Config" },
+    { code: "MANAGE_SETTINGS", name: "Manage Settings" },
+    { code: "CREATE_USERS", name: "Create Users" },
+    { code: "EDIT_USERS", name: "Edit Users" },
+    { code: "DELETE_USERS", name: "Delete Users" },
+    { code: "MANAGE_TCP_CONFIG", name: "Manage TCP Config" },
   ];
 
   for (const p of permList) {
@@ -251,11 +277,12 @@ async function initSchema() {
   const [users] = await db.query("SELECT id FROM users LIMIT 1");
   if (!users.length) {
     const hashedPass = hashPassword("Password123");
-    const [r] = await db.execute(
+    await db.execute(
       "INSERT INTO users (company_id, name, email, password, role, active) VALUES (?, ?, ?, ?, 'Super Admin', 1)",
       [defaultCompanyId, "Super Admin", "superadmin@tcp.com", hashedPass]
     );
-    const superUserId = r.insertId;
+    const [[superUser]] = await db.query("SELECT id FROM users WHERE email = ? LIMIT 1", ["superadmin@tcp.com"]);
+    const superUserId = superUser?.id;
     console.log(`Default Super Admin seeded (superadmin@tcp.com / Password123) with ID: ${superUserId}`);
 
     const [allPerms] = await db.query("SELECT id FROM permissions");
@@ -263,6 +290,28 @@ async function initSchema() {
       await db.execute("INSERT OR IGNORE INTO user_permissions (user_id, permission_id) VALUES (?, ?)", [superUserId, p.id]);
     }
     console.log("All permissions assigned to default Super Admin.");
+  }
+
+  // ── Seed SMTP from .env if smtp_settings table is empty ───────────────────
+  // This ensures the email service works out of the box without manual config.
+  // Users can override via the Settings page.
+  const [smtpRows] = await db.query("SELECT id FROM smtp_settings LIMIT 1");
+  if (!smtpRows.length) {
+    const smtpHost = process.env.SMTP_HOST;
+    const smtpPort = Number(process.env.SMTP_PORT) || 587;
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPass = process.env.SMTP_PASS;
+    const fromName = "TCP Monitor";
+
+    if (smtpHost && smtpUser && smtpPass) {
+      await db.execute(
+        "INSERT INTO smtp_settings (host, port, user, pass, from_name, company_id) VALUES (?, ?, ?, ?, ?, ?)",
+        [smtpHost, smtpPort, smtpUser, smtpPass, fromName, defaultCompanyId]
+      );
+      console.log(`SMTP settings seeded from .env (host=${smtpHost}, user=${smtpUser})`);
+    } else {
+      console.log("SMTP env vars not set — skipping SMTP seed. Configure via Settings page.");
+    }
   }
 }
 

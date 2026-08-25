@@ -15,14 +15,13 @@ import Users from "./pages/Users";
 import Login from "./pages/Login";
 import Unauthorized from "./pages/Unauthorized";
 import TcpConfig from "./pages/TcpConfig";
-import TcpSetupModal from "./components/TcpSetupModal";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { AuthProvider, useAuth } from "./store/AuthContext";
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 10000 } } });
 
 function AppContent() {
-  const { token, loading, tcpConfigured, can } = useAuth();
+  const { token, loading } = useAuth();
 
   if (loading) {
     return (
@@ -48,8 +47,7 @@ function AppContent() {
   // Main Authenticated Layout
   return (
     <div className="flex min-h-screen bg-slate-50">
-      {/* TCP Setup modal — only for users with MANAGE_TCP_CONFIG permission */}
-      {!tcpConfigured && can("MANAGE_TCP_CONFIG") && <TcpSetupModal />}
+      {/* Fixed sidebar */}
 
       {/* Fixed sidebar */}
       <Sidebar />
