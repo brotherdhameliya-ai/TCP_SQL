@@ -22,8 +22,13 @@ app.use(express.json());
 // Serve matched TCP images from any absolute folder path on disk
 // e.g. GET /api/tcp-image?file=ABC123.jpg&folder=C:/images
 app.get("/api/tcp-image", (req, res) => {
-  const { file, folder } = req.query;
+  let { file, folder } = req.query;
   if (!file || !folder) return res.status(400).end();
+  
+  // Remove surrounding quotes that might have been saved in DB
+  folder = folder.trim().replace(/^["']|["']$/g, '');
+  file = file.trim().replace(/^["']|["']$/g, '');
+
   // Basic path traversal guard
   const resolved = require("path").resolve(folder, file);
   if (!resolved.startsWith(require("path").resolve(folder))) return res.status(403).end();

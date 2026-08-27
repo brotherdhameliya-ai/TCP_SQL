@@ -120,8 +120,9 @@ async function updateConfig(req, res) {
     for (const cfg of configs) {
       const host        = cfg.host.trim();
       const port        = Number(cfg.port);
-      const folder_ok   = cfg.folder_path_ok?.trim() || null;
-      const folder_nr   = cfg.folder_path_nr?.trim() || null;
+      // Remove surrounding quotes (common when pasting from Windows "Copy as path")
+      const folder_ok   = cfg.folder_path_ok?.trim().replace(/^["']|["']$/g, '') || null;
+      const folder_nr   = cfg.folder_path_nr?.trim().replace(/^["']|["']$/g, '') || null;
       const zone_id     = cfg.zone_id || null;
 
       await db.execute(

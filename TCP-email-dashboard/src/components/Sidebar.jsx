@@ -1,19 +1,19 @@
 import { NavLink } from "react-router-dom";
 import { LayoutDashboard, Clock, Mail, History, Inbox, Settings, Database, Bell, Users, Network } from "lucide-react";
-import logo from "../assets/Myntra1.png";
+import logo from "../assets/Aaradhna.png";
 import { useAuth } from "../store/AuthContext";
 
 const links = [
-  { to: "/",              icon: LayoutDashboard, label: "Dashboard",        permission: "VIEW_DASHBOARD" },
-  { to: "/records",       icon: Database,        label: "Records",          permission: "VIEW_RECORDS" },
-  { to: "/schedules",     icon: Clock,           label: "Schedules",        permission: "MANAGE_SCHEDULES" },
-  { to: "/recipients",    icon: Mail,            label: "Recipients",       permission: "MANAGE_RECIPIENTS" },
-  { to: "/email-history", icon: History,         label: "Email History",    permission: "VIEW_EMAIL_LOGS" },
-  { to: "/pending",       icon: Inbox,           label: "Pending Messages", permission: "VIEW_RECORDS" },
-  { to: "/tcp-config",    icon: Network,         label: "TCP Config",        permission: "MANAGE_TCP_CONFIG" },
-  { to: "/notifications", icon: Bell,            label: "Notifications",    permission: "VIEW_NOTIFICATIONS" },
-  { to: "/settings",      icon: Settings,        label: "Settings",         permission: "MANAGE_SETTINGS" },
-  { to: "/users",         icon: Users,           label: "Users",            permission: "CREATE_USERS" },
+  { to: "/", icon: LayoutDashboard, label: "Dashboard", permission: "VIEW_DASHBOARD" },
+  { to: "/records", icon: Database, label: "Records", permission: "VIEW_RECORDS" },
+  { to: "/schedules", icon: Clock, label: "Schedules", permission: "MANAGE_SCHEDULES" },
+  { to: "/recipients", icon: Mail, label: "Recipients", permission: "MANAGE_RECIPIENTS" },
+  { to: "/email-history", icon: History, label: "Email History", permission: "VIEW_EMAIL_LOGS" },
+  { to: "/pending", icon: Inbox, label: "Pending Messages", permission: "VIEW_RECORDS" },
+  { to: "/tcp-config", icon: Network, label: "TCP Config", permission: "MANAGE_TCP_CONFIG" },
+  { to: "/notifications", icon: Bell, label: "Notifications", permission: "VIEW_NOTIFICATIONS" },
+  { to: "/settings", icon: Settings, label: "Settings", permission: "MANAGE_SETTINGS" },
+  { to: "/users", icon: Users, label: "Users", permission: "CREATE_USERS" },
 ];
 
 export default function Sidebar() {
@@ -44,9 +44,9 @@ export default function Sidebar() {
             className={({ isActive }) =>
               `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150
                ${isActive
-                 ? "bg-blue-50 text-blue-700 border border-blue-100"
-                 : "text-slate-500 hover:bg-slate-50 hover:text-slate-800 border border-transparent"
-               }`
+                ? "bg-blue-50 text-blue-700 border border-blue-100"
+                : "text-slate-500 hover:bg-slate-50 hover:text-slate-800 border border-transparent"
+              }`
             }
           >
             {({ isActive }) => (
@@ -60,8 +60,20 @@ export default function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="px-4 py-3 border-t border-slate-100">
-        <p className="text-xs text-slate-400 text-center">v1.0.0</p>
+      <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex flex-col gap-2.5">
+        <div className="flex flex-col">
+          <span className="font-bold text-[13px] text-slate-800 tracking-tight">Pixcels<span className="text-indigo-600">Themes</span></span>
+          <span className="text-[10px] leading-snug text-slate-500 mt-0.5">Innovative IT & Automation Solutions for Your Business</span>
+        </div>
+        <a
+          href="https://www.pixcelsthemes.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center justify-center gap-1.5 bg-white hover:bg-slate-50 text-indigo-600 font-medium text-xs px-2 py-1.5 rounded-md transition-colors border border-slate-200 shadow-sm hover:shadow"
+        >
+          Visit Website
+        </a>
+        <p className="text-[10px] text-slate-400 text-center mt-1">v1.0.0</p>
       </div>
     </aside>
   );

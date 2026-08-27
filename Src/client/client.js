@@ -16,7 +16,8 @@ const loggedOut      = new Set();
 // ── 30ms Matching Setup ─────────────────────────────────────────────────────
 // key: "userId:host:port" -> { text, port, timer, timestamp }
 const MATCHING_WINDOW  = Number(process.env.TCP_MATCHING_WINDOW || 30);
-const pendingMessages  = new Map();
+// key: "userId:host:port" → { text, ts, timer }
+const rawMessages = new Map();
 
 function connKey(userId, host, port) {
   return `${userId}:${host}:${port}`;
@@ -64,7 +65,7 @@ function notify(severity, title, message) {
 
 async function findMatchingImage(folderPath, identifier) {
   if (!folderPath || !identifier) return null;
-  const cleanFolder = folderPath.trim();
+  const cleanFolder = folderPath.trim().replace(/^["']|["']$/g, '');
   const rawIdent    = identifier.trim();
   const identName   = path.parse(rawIdent).name.toLowerCase();
 
@@ -88,11 +89,45 @@ async function findMatchingImage(folderPath, identifier) {
   }
 }
 
+// ── saveOne ──────────────────────────────────────────────────────────────────
+// Look up config for one host:port, find a matching image, and insert one record.
+async function saveOne(userId, host, port, text, barcode, identifier) {
+  const [[config]] = await db.execute(
+    "SELECT folder_path_ok, folder_path_nr, zone_id FROM user_tcp_configs WHERE user_id = ? AND host = ? AND port = ? LIMIT 1",
+    [userId, host, Number(port)]
+  );
+
+  const folderPath = barcode
+    ? (config?.folder_path_ok || null)   // barcode → OK folder
+    : (config?.folder_path_nr || null);  // NR / no barcode → NR folder
+  const zoneId     = config?.zone_id || null;
+
+  const userLabel    = userLabels.get(`${host}:${port}`) || `user${userId}`;
+  const matchedImage = await findMatchingImage(folderPath, identifier);
+
+  if (matchedImage)
+    logger.info(`[${userLabel}][${port}] Image matched: ${matchedImage} in ${folderPath}`);
+  else if (folderPath)
+    logger.info(`[${userLabel}][${port}] No image match for "${identifier}" in ${folderPath}`);
+
+  console.log(`🗂️  [${userLabel}][${port}] folder=${folderPath} | matched=${matchedImage} | barcode=${barcode} | zone=${zoneId}`);
+
+  await db.execute(
+    `INSERT INTO tcp_messages
+       (message, company_id, port, image, folder_path, barcode, zone_id, received_at)
+     VALUES (?, 1, ?, ?, ?, ?, ?, ?)`,
+    [text, Number(port), matchedImage, folderPath, barcode, zoneId, getKolkataTimeStr()]
+  );
+  logger.info(`[${userLabel}][${port}] Saved → image=${matchedImage} barcode=${barcode} zone=${zoneId}`);
+}
+
 // ── processMessage ──────────────────────────────────────────────────────────
-// port1/text1 = the port we're processing from; port2/text2 = optional paired port
-// The "source port" for zone/folder lookup is the port that carries the barcode (OK)
-// or the port that carries NR — each looks up its own IP's folder.
-async function processMessage(userId, host, port1, text1, port2, text2) {
+// Paired mode rules:
+//   • Both have barcode → save BOTH records (one per port)
+//   • One barcode, one NR → save only the barcode record
+//   • Both NR → save only one record (port1 side)
+// Unpaired mode: save one record, barcode if present else null.
+async function processMessage(userId, host1, port1, text1, host2, port2, text2) {
   try {
     const parsePart = (msg) => {
       const idx   = msg.indexOf("|");
@@ -102,60 +137,34 @@ async function processMessage(userId, host, port1, text1, port2, text2) {
     };
 
     const p1 = parsePart(text1);
-    let targetText, targetPort, barcode, identifier;
 
     if (text2 !== undefined) {
       // ── Paired mode ─────────────────────────────────────────────────────
-      const p2           = parsePart(text2);
-      const isP1Barcode  = p1.val && p1.val !== "NR";
-      const isP2Barcode  = p2.val && p2.val !== "NR";
+      const p2          = parsePart(text2);
+      const isP1Barcode = !!(p1.val && p1.val !== "NR");
+      const isP2Barcode = !!(p2.val && p2.val !== "NR");
 
-      if (isP2Barcode) {
-        barcode = p2.val; targetText = text2; targetPort = port2; identifier = p2.ident;
+      if (isP1Barcode && isP2Barcode) {
+        // Both ports have a barcode → save BOTH records
+        await saveOne(userId, host1, port1, text1, p1.val, p1.ident);
+        await saveOne(userId, host2, port2, text2, p2.val, p2.ident);
+      } else if (isP2Barcode) {
+        // Only port2 has barcode → save port2 only
+        await saveOne(userId, host2, port2, text2, p2.val, p2.ident);
       } else if (isP1Barcode) {
-        barcode = p1.val; targetText = text1; targetPort = port1; identifier = p1.ident;
+        // Only port1 has barcode → save port1 only
+        await saveOne(userId, host1, port1, text1, p1.val, p1.ident);
       } else {
-        // Both NR or empty — default to text1
-        barcode = null; targetText = text1; targetPort = port1; identifier = p1.ident;
+        // Both NR / empty → save one record (port1 side)
+        await saveOne(userId, host1, port1, text1, null, p1.ident);
       }
     } else {
       // ── Unpaired mode ────────────────────────────────────────────────────
-      barcode    = (p1.val && p1.val !== "NR") ? p1.val : null;
-      targetText = text1;
-      targetPort = port1;
-      identifier = p1.ident;
+      const barcode = (p1.val && p1.val !== "NR") ? p1.val : null;
+      await saveOne(userId, host1, port1, text1, barcode, p1.ident);
     }
-
-    // ── Look up per-IP OK/NR folders and zone_id ────────────────────────
-    const [[config]] = await db.execute(
-      "SELECT folder_path_ok, folder_path_nr, zone_id FROM user_tcp_configs WHERE user_id = ? AND host = ? AND port = ? LIMIT 1",
-      [userId, host, Number(targetPort)]
-    );
-
-    const folderPath = barcode
-      ? (config?.folder_path_ok || null)   // barcode → OK folder
-      : (config?.folder_path_nr || null);  // NR / no barcode → NR folder
-    const zoneId     = config?.zone_id || null;
-
-    const userLabel = userLabels.get(`${host}:${targetPort}`) || `user${userId}`;
-
-    const matchedImage = await findMatchingImage(folderPath, identifier);
-    if (matchedImage)
-      logger.info(`[${userLabel}][${targetPort}] Image matched: ${matchedImage} in ${folderPath}`);
-    else if (folderPath)
-      logger.info(`[${userLabel}][${targetPort}] No image match for "${identifier}" in ${folderPath}`);
-
-    console.log(`🗂️  [${userLabel}][${targetPort}] folder=${folderPath} | matched=${matchedImage} | barcode=${barcode} | zone=${zoneId}`);
-
-    await db.execute(
-      `INSERT INTO tcp_messages
-         (message, company_id, port, image, folder_path, barcode, zone_id, received_at)
-       VALUES (?, 1, ?, ?, ?, ?, ?, ?)`,
-      [targetText, Number(targetPort), matchedImage, folderPath, barcode, zoneId, getKolkataTimeStr()]
-    );
-    logger.info(`[${userLabel}][${targetPort}] Saved → image=${matchedImage} barcode=${barcode} zone=${zoneId}`);
   } catch (e) {
-    const userLabel = userLabels.get(`${host}:${port1}`) || `user${userId}`;
+    const userLabel = userLabels.get(`${host1}:${port1}`) || `user${userId}`;
     logger.error(`[${userLabel}][${port1}] DB ERROR in processMessage: ${e.message}`);
   }
 }
@@ -190,16 +199,23 @@ function connectOne(userId, host, port) {
     logger.info(`[${userLabel}][${host}:${port}] ${text}`);
     console.log(`📩 [${userLabel}][${port}]`, text);
 
+    // ── Store arrival IMMEDIATELY (before any await) ─────────────────────
+    // This is the fix for the async race condition: both ports' messages
+    // must be in rawMessages before either DB query resolves, so partner
+    // lookup always succeeds within the matching window.
+    const myKey     = connKey(userId, host, port);
+    const arrivalTs = Date.now();
+    rawMessages.set(myKey, { text, ts: arrivalTs, timer: null });
+
     try {
-      // ── Zone-based 30ms pair matching ──────────────────────────────────
-      // Ports in the same Zone with the same host are matched within the window.
+      // ── Zone-based pair matching ──────────────────────────────────────
       const [[myRow]] = await db.execute(
         "SELECT zone_id, is_active FROM user_tcp_configs WHERE user_id = ? AND host = ? AND port = ? LIMIT 1",
         [userId, host, Number(port)]
       );
 
       if (!myRow || !myRow.is_active) {
-        // Port deactivated — process unpaired
+        rawMessages.delete(myKey);
         await processMessage(userId, host, Number(port), text);
         return;
       }
@@ -207,45 +223,71 @@ function connectOne(userId, host, port) {
       const zoneId = myRow.zone_id;
 
       if (!zoneId) {
-        // Port has no zone — process immediately, no pairing
+        rawMessages.delete(myKey);
         await processMessage(userId, host, Number(port), text);
         return;
       }
 
-      // Find the OTHER port(s) in the same Zone + same host
+      // Find the OTHER port(s) in the same Zone
       const [pairRows] = await db.execute(
-        "SELECT port FROM user_tcp_configs WHERE user_id = ? AND host = ? AND zone_id = ? AND port != ? AND is_active = 1",
-        [userId, host, zoneId, Number(port)]
+        "SELECT host, port FROM user_tcp_configs WHERE user_id = ? AND zone_id = ? AND (host != ? OR port != ?) AND is_active = 1",
+        [userId, zoneId, host, Number(port)]
       );
 
-      if (pairRows.length === 1) {
-        // Exactly one partner → 30ms matching window (unchanged logic)
-        const currentPort = Number(port);
-        const otherPort   = Number(pairRows[0].port);
-        const otherKey    = `${userId}:${host}:${otherPort}`;
-        const myKey       = `${userId}:${host}:${currentPort}`;
+      if (pairRows.length !== 1) {
+        // 0 or 2+ partners — process immediately without pairing
+        rawMessages.delete(myKey);
+        await processMessage(userId, host, Number(port), text);
+        return;
+      }
 
-        const pending = pendingMessages.get(otherKey);
-        if (pending) {
-          clearTimeout(pending.timer);
-          pendingMessages.delete(otherKey);
-          logger.info(`[${userLabel}] PAIRED ports ${currentPort} & ${otherPort} (zone=${zoneId}) within ${MATCHING_WINDOW}ms`);
-          await processMessage(userId, host, currentPort, text, otherPort, pending.text);
+      const currentPort = Number(port);
+      const otherHost   = pairRows[0].host;
+      const otherPort   = Number(pairRows[0].port);
+      const otherKey    = connKey(userId, otherHost, otherPort);
+
+      // Guard: if my entry was already consumed by partner's handler, skip
+      if (!rawMessages.has(myKey)) return;
+
+      const partnerMsg = rawMessages.get(otherKey);
+
+      if (partnerMsg) {
+        // ── Partner message found — check timing ─────────────────────
+        const delta = Math.abs(arrivalTs - partnerMsg.ts);
+
+        // Cancel partner's timeout (it must not process unpaired now)
+        if (partnerMsg.timer) clearTimeout(partnerMsg.timer);
+        rawMessages.delete(otherKey);
+        rawMessages.delete(myKey);
+
+        if (delta <= MATCHING_WINDOW) {
+          // ✅ Both arrived within window — PAIR
+          logger.info(`[${userLabel}] PAIRED ${host}:${currentPort} & ${otherHost}:${otherPort} (zone=${zoneId}) Δ${delta}ms`);
+          await processMessage(userId, host, currentPort, text, otherHost, otherPort, partnerMsg.text);
         } else {
-          const timer = setTimeout(async () => {
-            if (pendingMessages.has(myKey)) {
-              pendingMessages.delete(myKey);
-              logger.info(`[${userLabel}][${currentPort}] Matching window expired → processing unpaired`);
-              await processMessage(userId, host, currentPort, text);
-            }
-          }, MATCHING_WINDOW);
-          pendingMessages.set(myKey, { text, port: currentPort, timer, timestamp: Date.now() });
+          // Partner's message is stale (> window) — process both unpaired
+          logger.info(`[${userLabel}] Stale partner (Δ${delta}ms > ${MATCHING_WINDOW}ms) — processing both unpaired`);
+          await processMessage(userId, otherHost, otherPort, partnerMsg.text);
+          await processMessage(userId, host, currentPort, text);
         }
       } else {
-        // 0 or 2+ partners — process immediately without pairing
-        await processMessage(userId, host, Number(port), text);
+        // ── No partner yet — set a timeout for remaining window ───────
+        const elapsed   = Date.now() - arrivalTs;
+        const remaining = Math.max(0, MATCHING_WINDOW - elapsed);
+
+        const timer = setTimeout(async () => {
+          if (rawMessages.has(myKey)) {
+            rawMessages.delete(myKey);
+            logger.info(`[${userLabel}][${currentPort}] Matching window expired → processing unpaired`);
+            await processMessage(userId, host, currentPort, text);
+          }
+        }, remaining);
+
+        // Update entry with timer so partner can cancel it
+        rawMessages.set(myKey, { text, ts: arrivalTs, timer });
       }
     } catch (e) {
+      rawMessages.delete(myKey);
       logger.error(`[${userLabel}][${port}] Pairing logic error: ${e.message}`);
     }
   });
@@ -308,6 +350,13 @@ function disconnectAllForUser(userId) {
       if (entry.socket) { entry.socket.removeAllListeners(); entry.socket.destroy(); }
     }
   }
+  // Cancel any pending raw messages for this user
+  for (const [k, v] of rawMessages.entries()) {
+    if (k.startsWith(`${userId}:`)) {
+      if (v.timer) clearTimeout(v.timer);
+      rawMessages.delete(k);
+    }
+  }
 }
 
 function logoutUser(userId) {
@@ -318,6 +367,13 @@ function logoutUser(userId) {
       if (entry.timer)  clearTimeout(entry.timer);
       connections.delete(key);
       if (entry.socket) { entry.socket.removeAllListeners(); entry.socket.destroy(); }
+    }
+  }
+  // Cancel any pending raw messages for this user
+  for (const [k, v] of [...rawMessages.entries()]) {
+    if (k.startsWith(`${userId}:`)) {
+      if (v.timer) clearTimeout(v.timer);
+      rawMessages.delete(k);
     }
   }
   const userLabel = `user${userId}`;

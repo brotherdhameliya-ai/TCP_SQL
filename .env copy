@@ -19,6 +19,6 @@ CLEANUP_TIME=11:00
 
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USER=dharmik.parvinfotech@gmail.com
-SMTP_PASS=ibnrgoklawuqxygn
-SMTP_FROM=TCP Monitor <dharmik4701@gmail.com>
+SMTP_USER=dharmik4708@gmail.com
+SMTP_PASS=pbhgugzgqxysqndl
+SMTP_FROM=TCP Monitor <dharmik4708@gmail.com>

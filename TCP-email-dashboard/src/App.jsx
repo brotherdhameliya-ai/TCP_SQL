@@ -17,6 +17,7 @@ import Unauthorized from "./pages/Unauthorized";
 import TcpConfig from "./pages/TcpConfig";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { AuthProvider, useAuth } from "./store/AuthContext";
+import Footer from "./components/Footer";
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 10000 } } });
 
@@ -57,21 +58,23 @@ function AppContent() {
         <Header />
         
         {/* pt-16 offsets content below the fixed 64px header */}
-        <main className="flex-1 pt-16 p-6 lg:p-8 bg-slate-50 mt-16">
-          <Routes>
-            <Route path="/"              element={<ProtectedRoute permission="VIEW_DASHBOARD"><Dashboard /></ProtectedRoute>} />
-            <Route path="/schedules"     element={<ProtectedRoute permission="MANAGE_SCHEDULES"><Schedules /></ProtectedRoute>} />
-            <Route path="/recipients"    element={<ProtectedRoute permission="MANAGE_RECIPIENTS"><Recipients /></ProtectedRoute>} />
-            <Route path="/email-history" element={<ProtectedRoute permission="VIEW_EMAIL_LOGS"><EmailHistory /></ProtectedRoute>} />
-            <Route path="/pending"       element={<ProtectedRoute permission="VIEW_RECORDS"><PendingMessages /></ProtectedRoute>} />
-            <Route path="/records"       element={<ProtectedRoute permission="VIEW_RECORDS"><Records /></ProtectedRoute>} />
-            <Route path="/settings"      element={<ProtectedRoute permission="MANAGE_SETTINGS"><Settings /></ProtectedRoute>} />
-            <Route path="/notifications" element={<ProtectedRoute permission="VIEW_NOTIFICATIONS"><Notifications /></ProtectedRoute>} />
-            <Route path="/users"         element={<ProtectedRoute permission="CREATE_USERS"><Users /></ProtectedRoute>} />
-            <Route path="/tcp-config"    element={<ProtectedRoute permission="MANAGE_TCP_CONFIG"><TcpConfig /></ProtectedRoute>} />
-            <Route path="/403"           element={<Unauthorized />} />
-            <Route path="*"              element={<Navigate to="/" replace />} />
-          </Routes>
+        <main className="flex-1 flex flex-col pt-16 bg-slate-50 mt-16">
+          <div className="flex-1 p-6 lg:p-8">
+            <Routes>
+              <Route path="/"              element={<ProtectedRoute permission="VIEW_DASHBOARD"><Dashboard /></ProtectedRoute>} />
+              <Route path="/schedules"     element={<ProtectedRoute permission="MANAGE_SCHEDULES"><Schedules /></ProtectedRoute>} />
+              <Route path="/recipients"    element={<ProtectedRoute permission="MANAGE_RECIPIENTS"><Recipients /></ProtectedRoute>} />
+              <Route path="/email-history" element={<ProtectedRoute permission="VIEW_EMAIL_LOGS"><EmailHistory /></ProtectedRoute>} />
+              <Route path="/pending"       element={<ProtectedRoute permission="VIEW_RECORDS"><PendingMessages /></ProtectedRoute>} />
+              <Route path="/records"       element={<ProtectedRoute permission="VIEW_RECORDS"><Records /></ProtectedRoute>} />
+              <Route path="/settings"      element={<ProtectedRoute permission="MANAGE_SETTINGS"><Settings /></ProtectedRoute>} />
+              <Route path="/notifications" element={<ProtectedRoute permission="VIEW_NOTIFICATIONS"><Notifications /></ProtectedRoute>} />
+              <Route path="/users"         element={<ProtectedRoute permission="CREATE_USERS"><Users /></ProtectedRoute>} />
+              <Route path="/tcp-config"    element={<ProtectedRoute permission="MANAGE_TCP_CONFIG"><TcpConfig /></ProtectedRoute>} />
+              <Route path="/403"           element={<Unauthorized />} />
+              <Route path="*"              element={<Navigate to="/" replace />} />
+            </Routes>
+          </div>
         </main>
       </div>
     </div>
