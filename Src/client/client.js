@@ -22,6 +22,42 @@ function connKey(userId, host, port) {
   return `${userId}:${host}:${port}`;
 }
 
+function getKolkataTimeStr(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  });
+  const parts = formatter.formatToParts(date);
+  const getPart = (type) => parts.find(p => p.type === type).value;
+  return `${getPart("year")}-${getPart("month")}-${getPart("day")} ${getPart("hour")}:${getPart("minute")}:${getPart("second")}`;
+}
+
+let userLabels = new Map();
+
+async function refreshUserLabels() {
+  try {
+    const [rows] = await db.execute("SELECT host, port FROM user_tcp_configs ORDER BY id");
+    const newLabels = new Map();
+    let index = 1;
+    for (const r of rows) {
+      const k = `${r.host}:${r.port}`;
+      if (!newLabels.has(k)) {
+        newLabels.set(k, `user${index}`);
+        index++;
+      }
+    }
+    userLabels = newLabels;
+  } catch (e) {
+    logger.error(`Error refreshing user labels: ${e.message}`);
+  }
+}
+
 function notify(severity, title, message) {
   insertNotification({ service_name: "TCP Node", severity, title, message, company_id: 1 }).catch(() => {});
 }
@@ -101,23 +137,26 @@ async function processMessage(userId, host, port1, text1, port2, text2) {
       : (config?.folder_path_nr || null);  // NR / no barcode → NR folder
     const zoneId     = config?.zone_id || null;
 
+    const userLabel = userLabels.get(`${host}:${targetPort}`) || `user${userId}`;
+
     const matchedImage = await findMatchingImage(folderPath, identifier);
     if (matchedImage)
-      logger.info(`[User:${userId}][${targetPort}] Image matched: ${matchedImage} in ${folderPath}`);
+      logger.info(`[${userLabel}][${targetPort}] Image matched: ${matchedImage} in ${folderPath}`);
     else if (folderPath)
-      logger.info(`[User:${userId}][${targetPort}] No image match for "${identifier}" in ${folderPath}`);
+      logger.info(`[${userLabel}][${targetPort}] No image match for "${identifier}" in ${folderPath}`);
 
-    console.log(`🗂️  [User:${userId}][${targetPort}] folder=${folderPath} | matched=${matchedImage} | barcode=${barcode} | zone=${zoneId}`);
+    console.log(`🗂️  [${userLabel}][${targetPort}] folder=${folderPath} | matched=${matchedImage} | barcode=${barcode} | zone=${zoneId}`);
 
     await db.execute(
       `INSERT INTO tcp_messages
          (message, company_id, port, image, folder_path, barcode, zone_id, received_at)
-       VALUES (?, 1, ?, ?, ?, ?, ?, datetime('now'))`,
-      [targetText, Number(targetPort), matchedImage, folderPath, barcode, zoneId]
+       VALUES (?, 1, ?, ?, ?, ?, ?, ?)`,
+      [targetText, Number(targetPort), matchedImage, folderPath, barcode, zoneId, getKolkataTimeStr()]
     );
-    logger.info(`[User:${userId}][${targetPort}] Saved → image=${matchedImage} barcode=${barcode} zone=${zoneId}`);
+    logger.info(`[${userLabel}][${targetPort}] Saved → image=${matchedImage} barcode=${barcode} zone=${zoneId}`);
   } catch (e) {
-    logger.error(`[User:${userId}][${port1}] DB ERROR in processMessage: ${e.message}`);
+    const userLabel = userLabels.get(`${host}:${port1}`) || `user${userId}`;
+    logger.error(`[${userLabel}][${port1}] DB ERROR in processMessage: ${e.message}`);
   }
 }
 
@@ -131,14 +170,16 @@ function connectOne(userId, host, port) {
   let isConnected = false;
   connections.set(key, { socket, timer: null });
 
-  logger.info(`[User:${userId}] CONNECTING ${host}:${port}`);
-  console.log(`🔄 [User:${userId}] Connecting ${host}:${port}`);
+  const userLabel = userLabels.get(`${host}:${port}`) || `user${userId}`;
+
+  logger.info(`[${userLabel}] CONNECTING ${host}:${port}`);
+  console.log(`🔄 [${userLabel}] Connecting ${host}:${port}`);
 
   socket.connect(Number(port), host, () => {
     isConnected = true;
-    logger.info(`[User:${userId}] CONNECTED ${host}:${port}`);
-    console.log(`✅ [User:${userId}] Connected ${host}:${port}`);
-    notify("info", "TCP Connected", `User ${userId} connected to ${host}:${port}`);
+    logger.info(`[${userLabel}] CONNECTED ${host}:${port}`);
+    console.log(`✅ [${userLabel}] Connected ${host}:${port}`);
+    notify("info", "TCP Connected", `User ${userLabel} connected to ${host}:${port}`);
     if (INITIAL_MESSAGE) socket.write(INITIAL_MESSAGE + "\r\n");
   });
 
@@ -146,8 +187,8 @@ function connectOne(userId, host, port) {
     if (!isConnected) return;
     const text = data.toString().trim();
     if (!text) return;
-    logger.info(`[User:${userId}][${host}:${port}] ${text}`);
-    console.log(`📩 [User:${userId}][${port}]`, text);
+    logger.info(`[${userLabel}][${host}:${port}] ${text}`);
+    console.log(`📩 [${userLabel}][${port}]`, text);
 
     try {
       // ── Zone-based 30ms pair matching ──────────────────────────────────
@@ -188,13 +229,13 @@ function connectOne(userId, host, port) {
         if (pending) {
           clearTimeout(pending.timer);
           pendingMessages.delete(otherKey);
-          logger.info(`[User:${userId}] PAIRED ports ${currentPort} & ${otherPort} (zone=${zoneId}) within ${MATCHING_WINDOW}ms`);
+          logger.info(`[${userLabel}] PAIRED ports ${currentPort} & ${otherPort} (zone=${zoneId}) within ${MATCHING_WINDOW}ms`);
           await processMessage(userId, host, currentPort, text, otherPort, pending.text);
         } else {
           const timer = setTimeout(async () => {
             if (pendingMessages.has(myKey)) {
               pendingMessages.delete(myKey);
-              logger.info(`[User:${userId}][${currentPort}] Matching window expired → processing unpaired`);
+              logger.info(`[${userLabel}][${currentPort}] Matching window expired → processing unpaired`);
               await processMessage(userId, host, currentPort, text);
             }
           }, MATCHING_WINDOW);
@@ -205,23 +246,23 @@ function connectOne(userId, host, port) {
         await processMessage(userId, host, Number(port), text);
       }
     } catch (e) {
-      logger.error(`[User:${userId}][${port}] Pairing logic error: ${e.message}`);
+      logger.error(`[${userLabel}][${port}] Pairing logic error: ${e.message}`);
     }
   });
 
   socket.on("end", () => {
-    logger.info(`[User:${userId}][${host}:${port}] server ended connection`);
+    logger.info(`[${userLabel}][${host}:${port}] server ended connection`);
   });
 
   socket.on("close", () => {
     isConnected = false;
-    logger.info(`[User:${userId}][${host}:${port}] closed — retrying in ${RECONNECT_DELAY}ms`);
-    console.log(`❌ [User:${userId}][${port}] disconnected`);
+    logger.info(`[${userLabel}][${host}:${port}] closed — retrying in ${RECONNECT_DELAY}ms`);
+    console.log(`❌ [${userLabel}][${port}] disconnected`);
     socket.removeAllListeners();
     socket.destroy();
 
     if (loggedOut.has(userId) || !connections.has(key)) return;
-    notify("warning", "TCP Closed", `${host}:${port} closed for user ${userId}`);
+    notify("warning", "TCP Closed", `${host}:${port} closed for user ${userLabel}`);
 
     db.execute(
       "SELECT is_active FROM user_tcp_configs WHERE user_id = ? AND host = ? AND port = ? LIMIT 1",
@@ -229,7 +270,7 @@ function connectOne(userId, host, port) {
     ).then(([[cfg]]) => {
       if (!cfg || !cfg.is_active || loggedOut.has(userId) || !connections.has(key)) {
         connections.delete(key);
-        console.log(`🔒 [User:${userId}][${port}] is_active=0 or logged out — reconnect suppressed`);
+        console.log(`🔒 [${userLabel}][${port}] is_active=0 or logged out — reconnect suppressed`);
         return;
       }
       const timer = setTimeout(() => {
@@ -241,8 +282,8 @@ function connectOne(userId, host, port) {
   });
 
   socket.on("error", (err) => {
-    logger.error(`[User:${userId}][${host}:${port}] ERROR: ${err.message}`);
-    console.log(`🚨 [User:${userId}][${port}] ERROR:`, err.message);
+    logger.error(`[${userLabel}][${host}:${port}] ERROR: ${err.message}`);
+    console.log(`🚨 [${userLabel}][${port}] ERROR:`, err.message);
   });
 }
 
@@ -253,7 +294,8 @@ function disconnectUser(userId, host, port) {
   if (entry.timer)  clearTimeout(entry.timer);
   if (entry.socket) { entry.socket.removeAllListeners(); entry.socket.destroy(); }
   connections.delete(key);
-  logger.info(`[User:${userId}] Disconnected ${host}:${port}`);
+  const userLabel = userLabels.get(`${host}:${port}`) || `user${userId}`;
+  logger.info(`[${userLabel}] Disconnected ${host}:${port}`);
 }
 
 function disconnectAllForUser(userId) {
@@ -278,13 +320,15 @@ function logoutUser(userId) {
       if (entry.socket) { entry.socket.removeAllListeners(); entry.socket.destroy(); }
     }
   }
-  logger.info(`[User:${userId}] logged out — all TCP connections stopped`);
-  console.log(`🔒 [User:${userId}] logged out — TCP connections stopped`);
+  const userLabel = `user${userId}`;
+  logger.info(`[${userLabel}] logged out — all TCP connections stopped`);
+  console.log(`🔒 [${userLabel}] logged out — TCP connections stopped`);
 }
 
 async function loadAndConnectUser(userId) {
   loggedOut.delete(userId);
   try {
+    await refreshUserLabels();
     const [rows] = await db.execute(
       "SELECT host, port FROM user_tcp_configs WHERE user_id = ? AND is_active = 1",
       [userId]
@@ -299,6 +343,7 @@ async function loadAndConnectUser(userId) {
 
 async function loadAll() {
   try {
+    await refreshUserLabels();
     const [rows] = await db.execute(
       "SELECT DISTINCT user_id, host, port FROM user_tcp_configs WHERE is_active = 1"
     );
@@ -317,4 +362,13 @@ function stopAll() {
   connections.clear();
 }
 
-module.exports = { connectOne, disconnectUser, disconnectAllForUser, logoutUser, loadAndConnectUser, loadAll, stopAll };
+module.exports = {
+  connectOne,
+  disconnectUser,
+  disconnectAllForUser,
+  logoutUser,
+  loadAndConnectUser,
+  loadAll,
+  stopAll,
+  refreshUserLabels
+};

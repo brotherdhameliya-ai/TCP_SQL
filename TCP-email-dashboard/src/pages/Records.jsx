@@ -258,7 +258,7 @@ export default function Records() {
                           />
                         </td>
                         <td className="px-4 py-3 font-mono text-xs text-slate-400">{r.id}</td>
-                        <td className="px-4 py-3 text-xs text-slate-500">{new Date(r.received_at).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-xs text-slate-500">{new Date(r.received_at).toLocaleString("en-US", { timeZone: "Asia/Kolkata" })}</td>
                         <td className="px-4 py-3 text-slate-700 max-w-sm">
                           <span className="block truncate group-hover:whitespace-normal group-hover:break-words transition-all">
                             {r.message}
@@ -286,7 +286,7 @@ export default function Records() {
                           </Badge>
                         </td>
                         <td className="px-4 py-3 text-xs text-slate-500">
-                          {r.email_sent_at ? new Date(r.email_sent_at).toLocaleString() : "—"}
+                          {r.email_sent_at ? new Date(r.email_sent_at).toLocaleString("en-US", { timeZone: "Asia/Kolkata" }) : "—"}
                         </td>
                       </tr>
                     );

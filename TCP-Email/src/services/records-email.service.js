@@ -10,12 +10,12 @@ const logger                                                     = require("../u
 function buildReportHtml({ records, totalCount, action }) {
   const preview = records.slice(0, 20);
   const hasMore = totalCount > 20;
-  const now     = new Date().toLocaleString();
+  const now     = new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
 
   const rows = preview.map((r, i) => `
     <tr style="background:${i % 2 === 0 ? "#f8fafc" : "#ffffff"}">
       <td style="padding:7px 10px;border:1px solid #e2e8f0;font-size:12px">${r.id}</td>
-      <td style="padding:7px 10px;border:1px solid #e2e8f0;font-size:12px">${r.received_at ? new Date(r.received_at).toLocaleString() : ""}</td>
+      <td style="padding:7px 10px;border:1px solid #e2e8f0;font-size:12px">${r.received_at ? new Date(r.received_at).toLocaleString("en-US", { timeZone: "Asia/Kolkata" }) : ""}</td>
       <td style="padding:7px 10px;border:1px solid #e2e8f0;font-size:12px;max-width:360px;word-break:break-word">${r.message}</td>
       <td style="padding:7px 10px;border:1px solid #e2e8f0;font-size:12px;max-width:280px;word-break:break-word">${r.barcode ? String(r.barcode).replace(/\|/g, " | ") : "—"}</td>
     </tr>`).join("");

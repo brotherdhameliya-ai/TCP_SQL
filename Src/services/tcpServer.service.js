@@ -2,6 +2,22 @@ const net = require("net");
 const Camera = require("../models/camera.model");
 const logger = require("../services/logger");
 
+function getKolkataTimeStr(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  });
+  const parts = formatter.formatToParts(date);
+  const getPart = (type) => parts.find(p => p.type === type).value;
+  return `${getPart("year")}-${getPart("month")}-${getPart("day")} ${getPart("hour")}:${getPart("minute")}:${getPart("second")}`;
+}
+
 // key: "ip:port" -> { server: net.Server, camera, clients: Set, lastMessage, lastActivity, status }
 const servers = new Map();
 
@@ -41,7 +57,7 @@ function startServer(camera) {
       if (!text) return;
 
       state.lastMessage = text;
-      state.lastActivity = new Date().toISOString();
+      state.lastActivity = getKolkataTimeStr();
       state.status = "connected";
 
       console.log(`[${camera.camera_name}][${camera.port}] ${text}`);

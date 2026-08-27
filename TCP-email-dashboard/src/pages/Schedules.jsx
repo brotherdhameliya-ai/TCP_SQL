@@ -81,7 +81,7 @@ export default function Schedules() {
                   <td className="px-5 py-3.5">
                     <Badge color={s.active ? "green" : "slate"}>{s.active ? "Active" : "Disabled"}</Badge>
                   </td>
-                  <td className="px-5 py-3.5 text-slate-500">{new Date(s.created_at).toLocaleDateString()}</td>
+                  <td className="px-5 py-3.5 text-slate-500">{new Date(s.created_at).toLocaleDateString("en-US", { timeZone: "Asia/Kolkata" })}</td>
                   <td className="px-5 py-3.5">
                     <div className="flex justify-end gap-2">
                       <Button size="sm" variant="ghost" onClick={() => toggle.mutate(s)}>

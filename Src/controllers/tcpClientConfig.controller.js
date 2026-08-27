@@ -144,6 +144,9 @@ async function updateConfig(req, res) {
       }
     }
 
+    // Rebuild user label sequence
+    await client.refreshUserLabels();
+
     // Reconnect
     for (const cfg of configs) {
       client.connectOne(userId, cfg.host.trim(), Number(cfg.port));

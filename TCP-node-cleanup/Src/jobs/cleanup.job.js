@@ -8,9 +8,10 @@ const ENABLE = process.env.ENABLE_AUTO_CLEANUP === "true";
 const CLEANUP_TIME = process.env.CLEANUP_TIME || "00:00";
 
 function getCutoffDate() {
-  const date = new Date();
+  const date = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
   date.setDate(date.getDate() - RETENTION_DAYS);
-  return date.toISOString().split("T")[0];
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 async function cleanDatabase() {

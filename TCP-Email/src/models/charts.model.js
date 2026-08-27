@@ -9,7 +9,7 @@ function shouldFilter(isSuperAdmin, companyId) {
 // ── Messages Trend (last 24 h) ─────────────────────────
 async function getMessagesTrend(companyId, isSuperAdmin = false) {
   const filter = shouldFilter(isSuperAdmin, companyId);
-  const where = ["received_at >= datetime('now', '-24 hours')"];
+  const where = ["received_at >= datetime('now', '+5 hours', '+30 minutes', '-24 hours')"];
   const params = [];
 
   if (filter) {
@@ -56,7 +56,7 @@ async function getEmailStatusDistribution(companyId, isSuperAdmin = false) {
 // ── Daily Records (last 30 days) ───────────────────────
 async function getDailyRecords(companyId, isSuperAdmin = false) {
   const filter = shouldFilter(isSuperAdmin, companyId);
-  const where = ["received_at >= date('now', '-30 days')"];
+  const where = ["received_at >= date('now', '+5 hours', '+30 minutes', '-30 days')"];
   const params = [];
 
   if (filter) {
@@ -88,7 +88,7 @@ async function getDailyRecords(companyId, isSuperAdmin = false) {
 // ── Email History (last 30 days) ───────────────────────
 async function getEmailHistory(companyId, isSuperAdmin = false) {
   const filter = shouldFilter(isSuperAdmin, companyId);
-  const where = ["status = 'success'", "sent_at >= date('now', '-30 days')"];
+  const where = ["status = 'success'", "sent_at >= date('now', '+5 hours', '+30 minutes', '-30 days')"];
   const params = [];
 
   if (filter) {
@@ -151,12 +151,12 @@ async function getEnhancedStats(companyId, isSuperAdmin = false) {
          COUNT(*) AS total,
          SUM(CASE WHEN email_sent = 1 THEN 1 ELSE 0 END) AS sent,
          SUM(CASE WHEN email_sent = 0 THEN 1 ELSE 0 END) AS pending,
-         SUM(CASE WHEN date(received_at) = date('now') THEN 1 ELSE 0 END) AS today
+         SUM(CASE WHEN date(received_at) = date('now', '+5 hours', '+30 minutes') THEN 1 ELSE 0 END) AS today
        FROM tcp_messages WHERE company_id = ?`,
       [cid]
     );
     [[emailsToday]] = await db.execute(
-      `SELECT COUNT(*) AS count FROM email_logs WHERE date(sent_at) = date('now') AND status = 'success' AND company_id = ?`,
+      `SELECT COUNT(*) AS count FROM email_logs WHERE date(sent_at) = date('now', '+5 hours', '+30 minutes') AND status = 'success' AND company_id = ?`,
       [cid]
     );
     [[activeScheds]] = await db.execute(
@@ -173,11 +173,11 @@ async function getEnhancedStats(companyId, isSuperAdmin = false) {
          COUNT(*) AS total,
          SUM(CASE WHEN email_sent = 1 THEN 1 ELSE 0 END) AS sent,
          SUM(CASE WHEN email_sent = 0 THEN 1 ELSE 0 END) AS pending,
-         SUM(CASE WHEN date(received_at) = date('now') THEN 1 ELSE 0 END) AS today
+         SUM(CASE WHEN date(received_at) = date('now', '+5 hours', '+30 minutes') THEN 1 ELSE 0 END) AS today
        FROM tcp_messages`
     );
     [[emailsToday]] = await db.execute(
-      `SELECT COUNT(*) AS count FROM email_logs WHERE date(sent_at) = date('now') AND status = 'success'`
+      `SELECT COUNT(*) AS count FROM email_logs WHERE date(sent_at) = date('now', '+5 hours', '+30 minutes') AND status = 'success'`
     );
     [[activeScheds]] = await db.execute(
       `SELECT COUNT(*) AS count FROM email_schedules WHERE active = 1`

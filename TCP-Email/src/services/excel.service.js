@@ -46,7 +46,7 @@ async function generateExcelBuffer(records) {
     chunk.forEach((r, idx) => {
       const row = ws.addRow({
         id:          r.id,
-        received_at: r.received_at ? new Date(r.received_at).toLocaleString() : "",
+        received_at: r.received_at ? new Date(r.received_at).toLocaleString("en-US", { timeZone: "Asia/Kolkata" }) : "",
         message:     r.message,
         barcode:     r.barcode ? String(r.barcode).replace(/\|/g, " | ") : "",
       });

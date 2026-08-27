@@ -7,7 +7,23 @@ const logDir = path.join(process.cwd(), "logs", "tcp-node");
 fs.mkdirSync(logDir, { recursive: true });
 
 const fmt = winston.format.combine(
-  winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
+  winston.format.timestamp({
+    format: () => {
+      const formatter = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Kolkata",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false
+      });
+      const parts = formatter.formatToParts(new Date());
+      const getPart = (type) => parts.find(p => p.type === type).value;
+      return `${getPart("year")}-${getPart("month")}-${getPart("day")} ${getPart("hour")}:${getPart("minute")}:${getPart("second")}`;
+    }
+  }),
   winston.format.errors({ stack: true }),
   winston.format.printf(({ timestamp, level, message, stack }) =>
     `[${timestamp}] ${level.toUpperCase()} ${stack || message}`

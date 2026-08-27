@@ -1,5 +1,21 @@
 const db = require("../config/db");
 
+function getKolkataTimeStr(date = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  });
+  const parts = formatter.formatToParts(date);
+  const getPart = (type) => parts.find(p => p.type === type).value;
+  return `${getPart("year")}-${getPart("month")}-${getPart("day")} ${getPart("hour")}:${getPart("minute")}:${getPart("second")}`;
+}
+
 // ── Helper ─────────────────────────────────────────────
 function shouldFilter(isSuperAdmin, companyId) {
   if (isSuperAdmin && !companyId) return false;
@@ -20,8 +36,8 @@ async function markAsSent(ids) {
   if (!ids.length) return;
   const placeholders = ids.map(() => "?").join(",");
   await db.execute(
-    `UPDATE tcp_messages SET email_sent = 1, email_sent_at = datetime('now') WHERE id IN (${placeholders})`,
-    ids
+    `UPDATE tcp_messages SET email_sent = 1, email_sent_at = ? WHERE id IN (${placeholders})`,
+    [getKolkataTimeStr(), ...ids]
   );
 }
 
@@ -34,13 +50,13 @@ async function getStats(companyId, isSuperAdmin = false) {
     const [[total]]   = await db.execute("SELECT COUNT(*) as count FROM tcp_messages WHERE company_id = ?", [cid]);
     const [[sent]]    = await db.execute("SELECT COUNT(*) as count FROM tcp_messages WHERE email_sent = 1 AND company_id = ?", [cid]);
     const [[pending]] = await db.execute("SELECT COUNT(*) as count FROM tcp_messages WHERE email_sent = 0 AND company_id = ?", [cid]);
-    const [[today]]   = await db.execute("SELECT COUNT(*) as count FROM tcp_messages WHERE date(received_at) = date('now') AND company_id = ?", [cid]);
+    const [[today]]   = await db.execute("SELECT COUNT(*) as count FROM tcp_messages WHERE date(received_at) = date('now', '+5 hours', '+30 minutes') AND company_id = ?", [cid]);
     return { total: total.count, sent: sent.count, pending: pending.count, today: today.count };
   } else {
     const [[total]]   = await db.execute("SELECT COUNT(*) as count FROM tcp_messages");
     const [[sent]]    = await db.execute("SELECT COUNT(*) as count FROM tcp_messages WHERE email_sent = 1");
     const [[pending]] = await db.execute("SELECT COUNT(*) as count FROM tcp_messages WHERE email_sent = 0");
-    const [[today]]   = await db.execute("SELECT COUNT(*) as count FROM tcp_messages WHERE date(received_at) = date('now')");
+    const [[today]]   = await db.execute("SELECT COUNT(*) as count FROM tcp_messages WHERE date(received_at) = date('now', '+5 hours', '+30 minutes')");
     return { total: total.count, sent: sent.count, pending: pending.count, today: today.count };
   }
 }
@@ -80,11 +96,11 @@ async function getPendingPaginated({ page = 1, limit = 20, search = "" }, compan
 
 // ── Time Range Helper ──────────────────────────────────
 const TIME_RANGE_SQL = {
-  "1h":  "received_at >= datetime('now', '-1 hour')",
-  "6h":  "received_at >= datetime('now', '-6 hours')",
-  "24h": "received_at >= datetime('now', '-24 hours')",
-  "7d":  "received_at >= datetime('now', '-7 days')",
-  "30d": "received_at >= datetime('now', '-30 days')",
+  "1h":  "received_at >= datetime('now', '+5 hours', '+30 minutes', '-1 hour')",
+  "6h":  "received_at >= datetime('now', '+5 hours', '+30 minutes', '-6 hours')",
+  "24h": "received_at >= datetime('now', '+5 hours', '+30 minutes', '-24 hours')",
+  "7d":  "received_at >= datetime('now', '+5 hours', '+30 minutes', '-7 days')",
+  "30d": "received_at >= datetime('now', '+5 hours', '+30 minutes', '-30 days')",
 };
 
 // ── Records (paginated, filterable) ───────────────────

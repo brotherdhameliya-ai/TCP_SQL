@@ -82,7 +82,7 @@ export default function Recipients() {
                   <td className="px-5 py-3.5">
                     <Badge color={r.active ? "green" : "slate"}>{r.active ? "Active" : "Disabled"}</Badge>
                   </td>
-                  <td className="px-5 py-3.5 text-slate-500">{new Date(r.created_at).toLocaleDateString()}</td>
+                  <td className="px-5 py-3.5 text-slate-500">{new Date(r.created_at).toLocaleDateString("en-US", { timeZone: "Asia/Kolkata" })}</td>
                   <td className="px-5 py-3.5">
                     <div className="flex justify-end gap-2">
                       <Button size="sm" variant="ghost" onClick={() => toggle.mutate(r)}>

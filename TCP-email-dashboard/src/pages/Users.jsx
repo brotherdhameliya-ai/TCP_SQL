@@ -300,7 +300,7 @@ export default function Users() {
 
                   {/* Created At */}
                   <td className="py-4 px-6 text-slate-400 text-xs">
-                    {new Date(u.created_at).toLocaleDateString()}
+                    {new Date(u.created_at).toLocaleDateString("en-US", { timeZone: "Asia/Kolkata" })}
                   </td>
 
                   {/* Action Buttons */}
